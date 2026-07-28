@@ -1,0 +1,28 @@
+- generic [ref=f3e11]:
+  - generic [ref=f3e12]:
+    - generic [ref=f3e13]: 客户攻单AI
+    - button "工作台" [ref=f3e14] [cursor=pointer]
+    - button "AI 助手" [ref=f3e15] [cursor=pointer]
+    - button "客户画像" [ref=f3e16] [cursor=pointer]
+    - button "会前/会中/会后" [ref=f3e17] [cursor=pointer]
+    - button "知识库后台" [ref=f3e18] [cursor=pointer]
+    - button "退出" [ref=f3e19] [cursor=pointer]
+  - generic [ref=f3e21]:
+    - generic [ref=f3e22]:
+      - generic [ref=f3e23]:
+        - generic [ref=f3e24]: "25"
+        - generic [ref=f3e25]: 客户数
+      - generic [ref=f3e26]:
+        - generic [ref=f3e27]: "0"
+        - generic [ref=f3e28]: 互动记录
+      - generic [ref=f3e29]:
+        - generic [ref=f3e30]: "25"
+        - generic [ref=f3e31]: 简报生成
+      - generic [ref=f3e32]:
+        - generic [ref=f3e33]: "0"
+        - generic [ref=f3e34]: 跟进任务
+    - generic [ref=f3e35]:
+      - heading "快速助手" [level=2] [ref=f3e36]
+      - generic [ref=f3e38]:
+        - textbox "例如：帮我准备明天见品牌野心型客户的会前简报" [ref=f3e39]
+        - button "发送" [ref=f3e40] [cursor=pointer]

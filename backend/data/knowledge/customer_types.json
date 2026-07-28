@@ -1,0 +1,114 @@
+[
+  {
+    "code": "BRAND_AMBITION",
+    "name": "品牌野心型",
+    "signal": "我要做行业第一",
+    "pain": "担心品牌投入没有长期回报",
+    "strategy": "把投放定义为品牌资产投资",
+    "opening_line": "老板，您投入的不是单纯的广告费，而是在为企业构建品牌资产。",
+    "taboo": "只谈CPM/短期流量成本",
+    "case_code": "FEIHE",
+    "source": "分众客户七大类型 · 识别与攻单策略.pptx",
+    "objections": [
+      "太贵了",
+      "我们再看看"
+    ],
+    "next_step": "建议先做1个核心城市1个月品牌认知测试方案，用历史品牌资产案例测算长期溢价。"
+  },
+  {
+    "code": "POSITIONING",
+    "name": "定位卡位型",
+    "signal": "这个位置我先占",
+    "pain": "担心消费者优先选择竞品",
+    "strategy": "提炼15秒心智超级话语",
+    "opening_line": "我发现你们在XX细分领域的体验做得特别好，但消费者还没真正意识到这种价值。",
+    "taboo": "只求规模声量",
+    "case_code": "MIAOKELD",
+    "source": "分众销售作战速查卡片.pptx",
+    "objections": [
+      "我们已经有定位了",
+      "消费者记不住"
+    ],
+    "next_step": "建议先提炼一句场景化超级话语，再选3城做电梯高频触达验证。"
+  },
+  {
+    "code": "CATEGORY_CREATOR",
+    "name": "品类开创者型",
+    "signal": "这个品类是我发明的",
+    "pain": "好产品怕养在深闺，市场教育成本高",
+    "strategy": "品类认知加速器",
+    "opening_line": "你们正在做的这件事，我判断是未来十年的趋势风口，现在布局正好能抢占品类心智的制高点。",
+    "taboo": "急功近利谈即时转化",
+    "case_code": "GENKI_FOREST",
+    "source": "分众客户七大类型 · 识别与攻单策略.pptx",
+    "objections": [
+      "教育市场太慢了",
+      "我们预算有限"
+    ],
+    "next_step": "建议先做1个核心城市3个月饱和投放，验证品类认知提升与搜索变化。"
+  },
+  {
+    "code": "COMPETITIVE_BREAKOUT",
+    "name": "竞争突围型",
+    "signal": "我要翻盘，改变格局",
+    "pain": "红海价格战，常规投放失效",
+    "strategy": "饱和攻击与差异化心智占领",
+    "opening_line": "这个赛道竞争看着激烈，但我发现你们有别人没有的差异化优势，只要放大这点就能快速突围。",
+    "taboo": "空谈长期主义",
+    "case_code": "ULIKE",
+    "source": "分众客户七大类型 · 识别与攻单策略.pptx",
+    "objections": [
+      "竞争太激烈",
+      "看不出差异"
+    ],
+    "next_step": "建议先锁定1个差异化卖点，用3城1个月高密度触达测试心智变化。"
+  },
+  {
+    "code": "CAPITAL_NARRATIVE",
+    "name": "资本叙事型",
+    "signal": "我要给投资人讲故事",
+    "pain": "GMV增长难以支撑高估值",
+    "strategy": "品牌资产化与估值杠杆",
+    "opening_line": "看了你们最新的融资新闻，这个阶段其实是品牌势能爆发的关键期，抓住了能直接拉开与对手的差距。",
+    "taboo": "纠缠细节，只谈即时ROI",
+    "case_code": "NEW_CONSUMER_BRAND",
+    "source": "分众销售作战速查卡片.pptx",
+    "objections": [
+      "现在更关心GMV",
+      "投资人要求短期回报"
+    ],
+    "next_step": "建议输出品牌声量-搜索指数-资本故事三段式价值说明，再评估1个测试城市。"
+  },
+  {
+    "code": "NATIONAL_EXPANSION",
+    "name": "全国化扩张型",
+    "signal": "我要出省，打天下",
+    "pain": "跨省认知不足，渠道有店无客",
+    "strategy": "先建认知，再铺渠道",
+    "opening_line": "你们在区域市场很强，想听听你们对全国化布局的规划？",
+    "taboo": "仅关注局部区域的单点突破",
+    "case_code": "LAOXIANGJI",
+    "source": "分众销售作战速查卡片.pptx",
+    "objections": [
+      "区域品牌做全国没优势",
+      "先铺渠道更快"
+    ],
+    "next_step": "建议先选5个核心城市做品牌认知打样，同步验证渠道承接效率。"
+  },
+  {
+    "code": "BRAND_REJUVENATION",
+    "name": "品牌焕新型",
+    "signal": "我要变年轻，破圈",
+    "pain": "认知老化，不会说新话",
+    "strategy": "认知重构与新人群触达",
+    "opening_line": "品牌底子很好，如何吸引年轻群体实现品牌年轻化？",
+    "taboo": "固步自封，沉湎历史",
+    "case_code": "BOSIDENG",
+    "source": "分众客户七大类型 · 识别与攻单策略.pptx",
+    "objections": [
+      "老客户会不会反感",
+      "年轻化会丢失原有形象"
+    ],
+    "next_step": "建议先定义1个年轻化价值主张，再用2城场景化投放验证认知变化。"
+  }
+]
