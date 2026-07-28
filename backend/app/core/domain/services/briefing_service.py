@@ -89,9 +89,8 @@ def list_briefings(db: Session, customer_id: int, limit: int = 20) -> List[Dict[
         .limit(limit)
         .all()
     )
-    result = []
-    for item in items:
-        result.append({
+    return {"code": 0, "message": "ok", "data": [
+        {
             "id": item.id,
             "customer_id": item.customer_id,
             "session_id": item.session_id,
@@ -109,8 +108,9 @@ def list_briefings(db: Session, customer_id: int, limit: int = 20) -> List[Dict[
             "llm_text": item.llm_text,
             "llm_source_cards": _safe_json(item.llm_source_cards, default=[]),
             "created_at": item.created_at,
-        })
-    return result
+        }
+        for item in items
+    ]}
 
 def _safe_json(value, default=None):
     if value is None:

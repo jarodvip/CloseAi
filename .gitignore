@@ -1,0 +1,4 @@
+*.pyc
+__pycache__/
+.playwright-mcp/
+backend_backup_20260728/

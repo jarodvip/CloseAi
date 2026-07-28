@@ -1,7 +1,0 @@
-- generic [ref=f2e4]:
-  - heading "登录客户攻单AI" [level=2] [ref=f2e5]
-  - generic [ref=f2e6]:
-    - textbox "用户名" [ref=f2e7]
-    - textbox "密码" [ref=f2e8]
-    - button "登录" [ref=f2e9] [cursor=pointer]
-  - paragraph [ref=f2e10]: 测试账号：admin / admin123 或 sales / sales123

@@ -1,3 +1,0 @@
-[      75ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:8080/src/index.html:0
-[   30969ms] [ERROR] TypeError: Cannot set properties of null (setting 'innerHTML')
-    at refreshDashboard (http://127.0.0.1:8080/src/app.js:357:20) @ http://127.0.0.1:8080/src/app.js:362
