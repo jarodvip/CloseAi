@@ -1,4 +1,4 @@
-const baseApi = 'http://127.0.0.1:8002';
+const baseApi = 'http://127.0.0.1:8000';
 let authToken = localStorage.getItem('access_token');
 let currentUser = null;
 let currentSessionId = null;
