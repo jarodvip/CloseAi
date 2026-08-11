@@ -1,7 +1,7 @@
 # 客户攻单AI — 详细 PRD
-> 版本：v0.1（立项稿）
-> 目标读者：产品、研发、销售负责人、测试
-> 输入来源：`/Users/jarod/Dev/sales/docs/客户攻单AI-计划方案.md`、`/Users/jarod/Dev/sales/docs/客户攻单AI-agent实现方案.md`、`/Users/jarod/Dev/sales/docs/客户攻单AI-agent技术架构.md`、两份销售内训 PPT
+
+> **⚠️ 本文档已过时 — v0.1 立项稿，产品需求与实际实现严重脱节。**
+> 当前项目状态见 [`README.md`](README.md)。
 
 ## 1. 产品概述
 ### 1.1 产品名称
