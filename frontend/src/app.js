@@ -1,23 +1,9 @@
-function sourceCardsHtml(cards = []) {
-  if (!Array.isArray(cards) || !cards.length) return '';
-  const items = cards.map(card => {
-    const badge = card.scene ? `<span class="source-badge">${escapeHtml(card.scene)}</span>` : '';
-    const detail = [card.detail, card.label].filter(Boolean).join(' · ');
-    const extra = detail ? ` · ${escapeHtml(detail)}` : '';
-    return `<li>
-      <div class="source-row">
-        <span class="source-source">${escapeHtml(card.source || '未知来源')}</span>
-        ${badge}
-      </div>
-      <div class="source-detail">${escapeHtml(card.label || '来源')}${extra}</div>
-    </li>`;
-  }).join('');
-  return `<div class="source-card"><div class="source-card-title">引用来源</div><ul class="source-list source-list--compact">${items}</ul></div>`;
-}const baseApi = 'http://127.0.0.1:8002';
+const baseApi = 'http://127.0.0.1:8002';
 let authToken = localStorage.getItem('access_token');
 let currentUser = null;
 let currentSessionId = null;
 let currentCustomerId = null;
+let customerCache = [];
 
 async function api(path, options = {}) {
   const url = `${baseApi}${path}`;
@@ -32,48 +18,59 @@ async function api(path, options = {}) {
 
 function escapeHtml(value) {
   return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/\n/g, '<br/>');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/\n/g, '<br/>');
 }
 
 function sourceCardsHtml(cards = []) {
-  if (!cards.length) return '';
+  if (!Array.isArray(cards) || !cards.length) return '';
   const items = cards.map(card => {
-    const detail = [card.detail, card.scene].filter(Boolean).join(' · ') || '来源';
-    return `<li><strong>${escapeHtml(card.source)}</strong>：${escapeHtml(card.label)} / ${escapeHtml(detail)}</li>`;
+    const badge = card.scene ? `<span class="source-badge">${escapeHtml(card.scene)}</span>` : '';
+    const detail = [card.detail, card.label].filter(Boolean).join(' · ');
+    return `<li>
+      <div class="source-row">
+        <span class="source-source">${escapeHtml(card.source || '未知来源')}</span>
+        ${badge}
+      </div>
+      <div class="source-detail">${escapeHtml(card.label || '来源')}${detail ? ' · ' + escapeHtml(detail) : ''}</div>
+    </li>`;
   }).join('');
-  return `<div class="source-card"><ul class="source-list">${items}</ul></div>`;
+  return `<div class="source-card"><div class="source-card-title">引用来源</div><ul class="source-list source-list--compact">${items}</ul></div>`;
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).catch(() => {});
+}
+
+function setLoading(btnId, isLoading) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = isLoading;
+  if (isLoading) {
+    btn.dataset.originalText = btn.textContent;
+    btn.innerHTML = '<span class="spinner"></span>处理中...';
+  } else {
+    btn.textContent = btn.dataset.originalText || btn.textContent;
+  }
 }
 
 function showPage(page) {
-  const target = document.getElementById(page);
-  if (!target) return;
-  const isTopLevel = target.parentElement && target.parentElement.id === 'app-shell';
-  if (isTopLevel) {
-    // 顶层页面切换：只清 #app-shell 直接子级
-    document.querySelectorAll('#app-shell > .page').forEach((el) => el.classList.remove('active'));
-  } else {
-    // 嵌套页面切换：清所有非顶层 .page
-    document.querySelectorAll('.page').forEach((el) => {
-      if (!el.parentElement || el.parentElement.id !== 'app-shell') {
-        el.classList.remove('active');
-      }
-    });
-  }
-  target.classList.add('active');
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+  document.getElementById(page)?.classList.add('active');
 }
 
-function appendChatBubble(role, text, extraHtml = '') {
-  const div = document.createElement('div');
-  div.className = `agent-msg ${role === 'user' ? 'agent-user' : 'agent-ai'}`;
-  div.innerHTML = `${escapeHtml(text)}${extraHtml ? '<div class="source-card-embed">' + extraHtml + '</div>' : ''}`;
-  const box = document.getElementById('chat-messages');
-  box.appendChild(div);
-  box.parentElement.scrollTop = box.parentElement.scrollHeight;
+function showToast(message, type = 'error') {
+  let toast = document.getElementById('toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:10px;color:#fff;font-size:14px;z-index:999;transition:opacity 0.3s;max-width:400px;';
+    document.body.appendChild(toast);
+  }
+  toast.style.background = type === 'success' ? '#16a34a' : '#dc2626';
+  toast.textContent = message;
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; }, 3000);
 }
 
 async function fetchCurrentUser() {
@@ -89,7 +86,9 @@ async function fetchCurrentUser() {
 
 function applyRoleVisibility() {
   const isAdmin = currentUser?.role === 'admin';
-  document.querySelectorAll('[data-admin-only]').forEach(el => el.style.display = isAdmin ? '' : 'none');
+  document.querySelectorAll('[data-admin-only]').forEach(el => {
+    el.style.display = isAdmin ? '' : 'none';
+  });
 }
 
 async function refreshUserAndVisibility() {
@@ -97,30 +96,33 @@ async function refreshUserAndVisibility() {
   applyRoleVisibility();
 }
 
+// ─── 客户列表 ───
+
 async function loadCustomers() {
   const data = await api('/api/v1/customers');
+  customerCache = data.data || [];
   const tbody = document.getElementById('customer-table-body');
-  tbody.innerHTML = '';
-  (data.data || []).forEach((item) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
+  if (!tbody) return;
+  tbody.innerHTML = customerCache.map(item => `
+    <tr>
       <td>${item.id}</td>
       <td>${escapeHtml(item.name || '')}</td>
-      <td>${escapeHtml(item.industry || '')}</td>
-      <td>${escapeHtml(item.primary_type || '')}</td>
+      <td>${escapeHtml(item.industry || '-')}</td>
+      <td>${escapeHtml(item.primary_type || '-')}</td>
       <td>
         <span class="button-stack">
-          <button onclick="viewCustomerDetail(${item.id})">详情</button>
-          <button onclick="openBriefing(${item.id})">会前简报</button>
-          <button onclick="openAssist(${item.id})">会中辅助</button>
-          <button onclick="openFollowup(${item.id})">会后跟进</button>
-          <button onclick="openTypeForm(${item.id})">更新类型</button>
+          <button class="sm" onclick="viewCustomerDetail(${item.id})">详情</button>
+          <button class="sm" onclick="openBriefing(${item.id})">简报</button>
+          <button class="sm" onclick="openAssist(${item.id})">会中</button>
+          <button class="sm" onclick="openFollowup(${item.id})">跟进</button>
+          <button class="sm" onclick="openTypeForm(${item.id})">类型</button>
         </span>
       </td>
-    `;
-    tbody.appendChild(tr);
-  });
+    </tr>
+  `).join('');
 }
+
+// ─── 客户详情 ───
 
 async function loadCustomerDetail() {
   const id = currentCustomerId || document.getElementById('customer-detail-id')?.value;
@@ -134,66 +136,75 @@ async function loadCustomerDetail() {
     ]);
     const rows = (interactions.data || []).slice().reverse().map(item => `
       <tr>
-        <td>${escapeHtml(item.created_at || '-')}</td>
+        <td>${escapeHtml(item.created_at?.slice(0, 19) || '-')}</td>
         <td>${escapeHtml(item.stage || '-')}</td>
         <td>${escapeHtml(item.summary || '-')}</td>
         <td>${escapeHtml(item.decisions || '-')}</td>
         <td>${escapeHtml(item.pending_actions || '-')}</td>
       </tr>
     `).join('');
-    const briefingRows = (briefings.data || []).slice().reverse().map(item => {
-      const sourceCards = sourceCardsHtml(item.llm_source_cards || []);
-      return `
-        <tr>
-          <td>${escapeHtml(item.created_at || '-')}</td>
-          <td>${escapeHtml(item.primary_type || '-')}</td>
-          <td>${escapeHtml(item.focus || item.opening_line || '-')}</td>
-          <td>${escapeHtml((item.recommended_cases || []).map(x => x.title).join('、') || '-')}</td>
-          <td>${sourceCards}</td>
-        </tr>
-      `;
-    }).join('');
+    const briefingRows = (briefings.data || []).slice().reverse().map(item => `
+      <tr>
+        <td>${escapeHtml(item.created_at?.slice(0, 19) || '-')}</td>
+        <td>${escapeHtml(item.primary_type || '-')}</td>
+        <td>${escapeHtml(item.focus || item.opening_line || '-')}</td>
+        <td>${escapeHtml((item.recommended_cases || []).map(x => x.title).join('、') || '-')}</td>
+        <td>${sourceCardsHtml(item.llm_source_cards || [])}</td>
+      </tr>
+    `).join('');
     container.innerHTML = `
-      <h3 style="margin:0 0 8px;font-size:18px;">客户详情：${escapeHtml(customer.name || id)}</h3>
-      <p>行业：${escapeHtml(customer.industry || '-')}</p>
-      <p>阶段：${escapeHtml(customer.stage || '-')}</p>
-      <p>区域：${escapeHtml(customer.region || '-')}</p>
-      <p>主类型：${escapeHtml(customer.primary_type || '-')}</p>
-      <p>次类型：${escapeHtml(customer.secondary_type || '-')}</p>
-      <p>类型依据：${escapeHtml(customer.type_evidence || '-')}</p>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="margin:0;font-size:18px;">${escapeHtml(customer.name || id)}</h3>
+        <button class="sm secondary" onclick="openTypeForm(${customer.id})">更新类型</button>
+      </div>
+      <div class="grid" style="margin-bottom:16px;">
+        <div><strong>行业：</strong>${escapeHtml(customer.industry || '-')}</div>
+        <div><strong>阶段：</strong>${escapeHtml(customer.stage || '-')}</div>
+        <div><strong>区域：</strong>${escapeHtml(customer.region || '-')}</div>
+        <div><strong>主类型：</strong>${escapeHtml(customer.primary_type || '-')}</div>
+        <div><strong>次类型：</strong>${escapeHtml(customer.secondary_type || '-')}</div>
+        <div><strong>类型依据：</strong>${escapeHtml(customer.type_evidence || '-')}</div>
+      </div>
       <h4 style="margin:16px 0 8px;font-size:16px;">会前简报历史</h4>
-      <table>
-        <thead>
-          <tr><th>时间</th><th>类型</th><th>重点</th><th>推荐案例</th><th>来源卡</th></tr>
-        </thead>
-        <tbody>${briefingRows || '<tr><td colspan="5" class="muted">暂无会前简报</td></tr>'}</tbody>
-      </table>
-      <h4 style="margin:16px 0 8px;font-size:16px;">会前/会中/会后历史</h4>
-      <table>
-        <thead>
-          <tr><th>时间</th><th>阶段</th><th>摘要</th><th>决策</th><th>待办</th></tr>
-        </thead>
-        <tbody>${rows || '<tr><td colspan="5" class="muted">暂无互动记录</td></tr>'}</tbody>
-      </table>
+      <div style="overflow-x:auto;">
+        <table>${briefingRows ? `<thead><tr><th>时间</th><th>类型</th><th>重点</th><th>案例</th><th>来源</th></tr></thead><tbody>${briefingRows}</tbody>` : '<p class="muted">暂无会前简报</p>'}</table>
+      </div>
+      <h4 style="margin:16px 0 8px;font-size:16px;">互动记录</h4>
+      <div style="overflow-x:auto;">
+        <table>${rows ? `<thead><tr><th>时间</th><th>阶段</th><th>摘要</th><th>决策</th><th>待办</th></tr></thead><tbody>${rows}</tbody>` : '<p class="muted">暂无互动记录</p>'}</table>
+      </div>
     `;
   } catch (e) {
-    container.innerHTML = `<p class="muted">加载客户详情失败：${e.message}</p>`;
+    container.innerHTML = `<p style="color:#dc2626;">加载客户详情失败：${e.message}</p>`;
   }
 }
 
+// ─── 客户创建 ───
+
 async function createCustomer() {
   const payload = {
-    name: document.getElementById('cust-name').value,
-    industry: document.getElementById('cust-industry').value,
-    revenue_range: document.getElementById('cust-revenue').value,
-    stage: document.getElementById('cust-stage').value,
-    region: document.getElementById('cust-region').value,
+    name: document.getElementById('cust-name').value.trim(),
+    industry: document.getElementById('cust-industry').value.trim(),
+    revenue_range: document.getElementById('cust-revenue').value.trim(),
+    stage: document.getElementById('cust-stage').value.trim(),
+    region: document.getElementById('cust-region').value.trim(),
   };
-  if (!payload.name) return alert('请填写客户名称');
-  await api('/api/v1/customers', { method: 'POST', body: JSON.stringify(payload) });
-  document.getElementById('customer-form').reset();
-  await loadCustomers();
+  if (!payload.name) return showToast('请填写客户名称');
+  setLoading('create-customer', true);
+  try {
+    await api('/api/v1/customers', { method: 'POST', body: JSON.stringify(payload) });
+    document.getElementById('customer-form').reset();
+    await loadCustomers();
+    refreshDashboard();
+    showToast('客户创建成功', 'success');
+  } catch (e) {
+    showToast(e.message);
+  } finally {
+    setLoading('create-customer', false);
+  }
 }
+
+// ─── 类型更新 ───
 
 async function updateCustomerType(customerId) {
   const payload = {
@@ -202,31 +213,37 @@ async function updateCustomerType(customerId) {
     type_confidence: parseFloat(document.getElementById('type-confidence').value || '0'),
     type_evidence: document.getElementById('type-evidence').value,
   };
-  await api(`/api/v1/customers/${customerId}/type`, { method: 'PATCH', body: JSON.stringify(payload) });
-  await loadCustomers();
-  closeModal('type-modal');
+  if (!payload.primary_type) return showToast('请填写主类型');
+  try {
+    await api(`/api/v1/customers/${customerId}/type`, { method: 'PATCH', body: JSON.stringify(payload) });
+    await loadCustomers();
+    closeModal('type-modal');
+    showToast('类型已更新', 'success');
+  } catch (e) {
+    showToast(e.message);
+  }
 }
+
+// ─── 会前/会中/会后 ───
 
 async function renderBriefing(customerId) {
   const sessionId = currentSessionId ? `&session_id=${encodeURIComponent(currentSessionId)}` : '';
-  const data = await api(`/api/v1/customers/${customerId}/briefing?${sessionId}` , { method: 'POST' });
+  const data = await api(`/api/v1/customers/${customerId}/briefing?${sessionId}`, { method: 'POST' });
   const payload = data.data || {};
   const sourceCards = sourceCardsHtml(payload.llm_source_cards || []);
   const container = document.getElementById('briefing-result');
   container.innerHTML = `
     <div class="result-block">
-      <h3>会前简报：${escapeHtml(payload.customer_name || customerId)}</h3>
-      <p><strong>类型：</strong>${escapeHtml(payload.primary_type || '待判断')}${payload.secondary_type ? ' / ' + escapeHtml(payload.secondary_type) : ''}</p>
-      <p><strong>置信度：</strong>${escapeHtml(String(payload.confidence ?? '-'))}</p>
+      <h3>${escapeHtml(payload.customer_name || customerId)}</h3>
+      <p><strong>类型：</strong>${escapeHtml(payload.primary_type || '待判断')}${payload.secondary_type ? ' / ' + escapeHtml(payload.secondary_type) : ''} <span class="badge ${payload.confidence ? 'badge-green' : 'badge-gray'}">置信度 ${payload.confidence ?? '-'}</span></p>
       <p><strong>判断依据：</strong>${escapeHtml(payload.evidence || '-')}</p>
-      <p><strong>破冰话术：</strong>${escapeHtml(payload.opening_line || '-')}</p>
+      <p><strong>破冰话术：</strong>${escapeHtml(payload.opening_line || '-')} ${payload.opening_line ? `<button class="copy-btn" onclick="copyText('${escapeHtml(payload.opening_line).replace(/'/g, "\\'")}')">复制</button>` : ''}</p>
       <p><strong>重点方向：</strong>${escapeHtml(payload.focus || '-')}</p>
       <p><strong>下一步：</strong>${escapeHtml(payload.next_step || '-')}</p>
       <p><strong>潜在异议：</strong>${escapeHtml((payload.potential_objections || []).join('；') || '-')}</p>
       <p><strong>推荐案例：</strong>${escapeHtml((payload.recommended_cases || []).map(x => x.title).join('、') || '-')}</p>
       ${sourceCards}
-      <p><strong>LLM：</strong>${escapeHtml(payload.llm_text || '未生成')}</p>
-      <p><strong>trace_id：</strong>${escapeHtml(data.trace_id || '-')}</p>
+      <p class="muted" style="font-size:12px; margin-top:8px;">LLM 输出：${escapeHtml((payload.llm_text || '未生成').slice(0, 200))}</p>
     </div>
   `;
   container.style.display = 'block';
@@ -238,25 +255,22 @@ async function renderAssist(customerId) {
   const payload = {
     current_stage: document.getElementById('assist-stage').value,
     transcript: document.getElementById('assist-transcript').value,
-    customer_type: document.getElementById('assist-type').value,
+    customer_type: '',
   };
   const data = await api(`/api/v1/customers/${customerId}/assist`, { method: 'POST', body: JSON.stringify(payload) });
   const out = data.data || {};
-  const sourceCards = sourceCardsHtml(out.source_cards || out.source_refs || []);
+  const sourceCards = sourceCardsHtml(out.source_cards || []);
   const container = document.getElementById('assist-result');
   container.innerHTML = `
     <div class="result-block">
       <h3>会中辅助</h3>
-      <p><strong>当前阶段：</strong>${escapeHtml(out.current_stage || '-')}</p>
-      <p><strong>检测阶段：</strong>${escapeHtml(out.detected_stage || '-')}</p>
+      <p><strong>阶段：</strong>${escapeHtml(out.current_stage || '-')} → 检测到 <strong>${escapeHtml(out.detected_stage || '-')}</strong></p>
       <p><strong>阶段提示：</strong>${escapeHtml(out.stage_guidance || '-')}</p>
-      <p><strong>建议话术：</strong>${escapeHtml(out.suggested_response || '-')}</p>
+      <p><strong>建议话术：</strong>${escapeHtml(out.suggested_response || '-')} ${out.suggested_response ? `<button class="copy-btn" onclick="copyText('${escapeHtml(out.suggested_response).replace(/'/g, "\\'")}')">复制</button>` : ''}</p>
       <p><strong>异议：</strong>${escapeHtml(out.objection_detected || '未识别')}</p>
       <p><strong>异议应答：</strong>${escapeHtml(out.objection_response || '-')}</p>
       <p><strong>备注：</strong>${escapeHtml((out.notes || []).join(' / ') || '-')}</p>
       ${sourceCards}
-      <p><strong>LLM：</strong>${escapeHtml(out.llm_text || '未生成')}</p>
-      <p><strong>trace_id：</strong>${escapeHtml(data.trace_id || '-')}</p>
     </div>
   `;
   container.style.display = 'block';
@@ -268,11 +282,11 @@ async function renderFollowup(customerId) {
     decisions: (document.getElementById('followup-decisions').value || '').split(/；/).filter(Boolean),
     pending_actions: (document.getElementById('followup-actions').value || '').split(/；/).filter(Boolean),
     transcript: document.getElementById('followup-transcript').value,
-    customer_type: document.getElementById('followup-type').value,
+    customer_type: '',
   };
   const data = await api(`/api/v1/customers/${customerId}/followup`, { method: 'POST', body: JSON.stringify(payload) });
   const out = data.data || {};
-  const sourceCards = sourceCardsHtml(out.source_cards || out.source_refs || []);
+  const sourceCards = sourceCardsHtml(out.source_cards || []);
   const container = document.getElementById('followup-result');
   container.innerHTML = `
     <div class="result-block">
@@ -284,73 +298,69 @@ async function renderFollowup(customerId) {
       <p><strong>微信跟进：</strong>${escapeHtml(out.followup_wechat || '-')}</p>
       <p><strong>知识沉淀建议：</strong>${escapeHtml(out.knowledge_update_suggestion || '-')}</p>
       ${sourceCards}
-      <p><strong>LLM：</strong>${escapeHtml(out.llm_text || '未生成')}</p>
-      <p><strong>trace_id：</strong>${escapeHtml(data.trace_id || '-')}</p>
     </div>
   `;
   container.style.display = 'block';
 }
 
-async function loadKnowledgeCases() {
-  const data = await api('/api/v1/knowledge/cases');
-  const tbody = document.getElementById('knowledge-case-table-body');
-  tbody.innerHTML = '';
-  (data.data || []).forEach((item) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${escapeHtml(item.code||'')}</td><td>${escapeHtml(item.title||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.industry||'')}</td><td>${escapeHtml(item.result||'')}</td><td>${escapeHtml(item.source||'')}</td>`;
-    tbody.appendChild(tr);
-  });
+// ─── 模态框 ───
+
+function openBriefing(customerId) {
+  document.getElementById('briefing-result').style.display = 'none';
+  document.getElementById('briefing-modal').style.display = 'flex';
+  renderBriefing(customerId);
+}
+function openAssist(customerId) {
+  document.getElementById('assist-result').style.display = 'none';
+  document.getElementById('assist-modal').style.display = 'flex';
+  document.getElementById('assist-form').dataset.customerId = customerId;
+}
+function openFollowup(customerId) {
+  document.getElementById('followup-result').style.display = 'none';
+  document.getElementById('followup-modal').style.display = 'flex';
+  document.getElementById('followup-form').dataset.customerId = customerId;
+}
+function openTypeForm(customerId) {
+  const customer = customerCache.find(c => c.id === customerId);
+  if (customer) {
+    document.getElementById('type-primary').value = customer.primary_type || '';
+    document.getElementById('type-secondary').value = customer.secondary_type || '';
+    document.getElementById('type-confidence').value = customer.type_confidence ?? '';
+    document.getElementById('type-evidence').value = customer.type_evidence || '';
+  }
+  document.getElementById('type-form').dataset.customerId = customerId;
+  document.getElementById('type-modal').style.display = 'flex';
+}
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+function logout() {
+  authToken = null;
+  localStorage.removeItem('access_token');
+  currentUser = null;
+  currentSessionId = null;
+  currentCustomerId = null;
+  customerCache = [];
+  showPage('login-page');
 }
 
-async function createKnowledgeCase() {
-  const payload = {
-    code: document.getElementById('case-code').value,
-    title: document.getElementById('case-title').value,
-    type: document.getElementById('case-type').value,
-    industry: document.getElementById('case-industry').value,
-    stage: document.getElementById('case-stage').value,
-    result: document.getElementById('case-result').value,
-    source: document.getElementById('case-source').value,
-  };
-  if (!payload.code || !payload.title) return alert('请填写案例编码和标题');
-  await api('/api/v1/knowledge/cases', { method: 'POST', body: JSON.stringify(payload) });
-  document.getElementById('knowledge-case-form').reset();
-  loadKnowledgeCases();
+function viewCustomerDetail(customerId) {
+  currentCustomerId = customerId;
+  showPage('customer-detail-page');
+  loadCustomerDetail();
 }
 
-async function loadKnowledgeScripts() {
-  const data = await api('/api/v1/knowledge/scripts');
-  const tbody = document.getElementById('knowledge-script-table-body');
-  tbody.innerHTML = '';
-  (data.data || []).forEach((item) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${escapeHtml(item.scene||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.template||'')}</td><td>${escapeHtml(item.source||'')}</td>`;
-    tbody.appendChild(tr);
-  });
-}
-
-async function createKnowledgeScript() {
-  const payload = {
-    scene: document.getElementById('script-scene').value,
-    type: document.getElementById('script-type').value,
-    template: document.getElementById('script-template').value,
-    source: document.getElementById('script-source').value,
-  };
-  if (!payload.type || !payload.template) return alert('请填写客户类型和话术');
-  await api('/api/v1/knowledge/scripts', { method: 'POST', body: JSON.stringify(payload) });
-  document.getElementById('knowledge-script-form').reset();
-  loadKnowledgeScripts();
-}
+// ─── 一键分析 ───
 
 async function quickAnalyze() {
-  const nameInput = document.getElementById('analyze-name');
-  const name = (nameInput.value || '').trim();
-  if (!name) return alert('请输入客户名称');
-  const industry = document.getElementById('analyze-industry').value;
-  const stage = document.getElementById('analyze-stage').value;
+  const name = document.getElementById('analyze-name').value.trim();
+  if (!name) return showToast('请输入客户名称');
+  const industry = document.getElementById('analyze-industry').value.trim();
+  const stage = document.getElementById('analyze-stage').value.trim();
   const container = document.getElementById('analyze-result');
   container.style.display = 'block';
-  container.innerHTML = '<p class="muted">正在分析中...</p>';
+  container.innerHTML = '<p class="muted"><span class="spinner" style="border-color:#6b7280;border-top-color:transparent;"></span> 正在分析中...</p>';
+  setLoading('quick-analyze-btn', true);
   try {
     const payload = { name, industry, stage };
     const data = await api('/api/v1/analyze', { method: 'POST', body: JSON.stringify(payload) });
@@ -359,101 +369,42 @@ async function quickAnalyze() {
     const sourceCards = sourceCardsHtml(b.llm_source_cards || []);
     container.innerHTML = `
       <div class="result-block">
-        ${out.is_new ? '<p style="color:#16a34a;font-weight:600;">新客户已创建</p>' : '<p class="muted">已找到已有客户</p>'}
-        <h3>${escapeHtml(out.customer_name || name)}</h3>
+        <div style="margin-bottom:8px;">
+          ${out.is_new ? '<span class="badge badge-green">新客户</span>' : '<span class="badge badge-gray">已有客户</span>'}
+          <span style="font-weight:600; font-size:16px; margin-left:8px;">${escapeHtml(out.customer_name || name)}</span>
+        </div>
         <p><strong>类型：</strong>${escapeHtml(out.primary_type || '待判断')}${out.secondary_type ? ' / ' + escapeHtml(out.secondary_type) : ''}</p>
         <p><strong>置信度：</strong>${escapeHtml(String(out.type_confidence ?? '-'))}</p>
         <p><strong>判断依据：</strong>${escapeHtml(out.type_evidence || '-')}</p>
-        <p><strong>破冰话术：</strong>${escapeHtml(b.opening_line || '-')}</p>
+        <p><strong>破冰话术：</strong>${escapeHtml(b.opening_line || '-')} ${b.opening_line ? `<button class="copy-btn" onclick="copyText('${escapeHtml(b.opening_line).replace(/'/g, "\\'")}')">复制</button>` : ''}</p>
         <p><strong>重点方向：</strong>${escapeHtml(b.focus || '-')}</p>
         <p><strong>下一步：</strong>${escapeHtml(b.next_step || '-')}</p>
         <p><strong>潜在异议：</strong>${escapeHtml((b.potential_objections || []).join('；') || '-')}</p>
         ${sourceCards}
-        <p><strong>LLM：</strong>${escapeHtml(b.llm_text || '未生成')}</p>
       </div>
     `;
     await loadCustomers();
+    await populateCustomerSelects();
+    refreshDashboard();
+    showToast('分析完成', 'success');
   } catch (e) {
     container.innerHTML = `<p style="color:#dc2626;">分析失败：${e.message}</p>`;
+    showToast(e.message);
+  } finally {
+    setLoading('quick-analyze-btn', false);
   }
 }
 
-async function refreshDashboard() {
-  try {
-    const [customers, cases, scripts] = await Promise.all([
-      api('/api/v1/customers'),
-      api('/api/v1/knowledge/cases'),
-      api('/api/v1/knowledge/scripts'),
-    ]);
-    document.getElementById('kpi-customers').textContent = (customers.data || []).length;
-    document.getElementById('kpi-interactions').textContent = '0';
-    document.getElementById('kpi-briefing').textContent = (customers.data || []).length;
-    document.getElementById('kpi-followup').textContent = '0';
-    const feed = document.getElementById('activity-feed');
-    if (feed) {
-      feed.innerHTML = `
-        <p>客户库：${(customers.data || []).length} 个</p>
-        <p>案例库：${(cases.data || []).length} 条</p>
-        <p>话术库：${(scripts.data || []).length} 条</p>
-      `;
-    }
-  } catch (e) {
-    console.error(e);
-  }
-}
+// ─── 聊天 ───
 
-async function askAgent() {
-  const input = document.getElementById('agent-input');
-  const text = (input.value || '').trim();
-  if (!text) return;
-  appendChatBubble('user', text);
-  input.value = '';
-  let reply = '';
-  if (text.includes('会前') || text.includes('简报')) {
-    reply = '请先到“客户画像”创建客户，再进入“会前/会中/会后”输入客户ID生成会前简报。';
-  } else if (text.includes('案例') || text.includes('话术')) {
-    reply = '你可以在“知识库后台”新增或查看案例与话术，后续助手会直接调用。';
-  } else if (text.includes('客户')) {
-    reply = '建议先明确客户名称、行业、发展阶段，我会协助判断客户类型。';
-  } else {
-    reply = '收到。你可以继续追问客户类型、会中应对话术或会后跟进动作。';
-  }
-  appendChatBubble('ai', reply);
-}
-
-function openBriefing(customerId) {
-  document.getElementById('briefing-modal').style.display = 'flex';
-  renderBriefing(customerId);
-}
-function openAssist(customerId) {
-  document.getElementById('assist-modal').style.display = 'flex';
-  document.getElementById('assist-form').dataset.customerId = customerId;
-}
-function openFollowup(customerId) {
-  document.getElementById('followup-modal').style.display = 'flex';
-  document.getElementById('followup-form').dataset.customerId = customerId;
-}
-function openTypeForm(customerId) {
-  document.getElementById('type-modal').style.display = 'flex';
-  document.getElementById('type-form').dataset.customerId = customerId;
-}
-function closeModal(id) {
-  document.getElementById(id).style.display = 'none';
-}
-
-function logout() {
-  authToken = null;
-  localStorage.removeItem('access_token');
-  currentUser = null;
-  currentSessionId = null;
-  currentCustomerId = null;
-  showPage('login-page');
-}
-
-function viewCustomerDetail(customerId) {
-  currentCustomerId = customerId;
-  showPage('customer-detail-page');
-  loadCustomerDetail();
+function appendChatBubble(role, text, extraHtml = '') {
+  const box = document.getElementById('chat-messages');
+  if (!box) return;
+  const div = document.createElement('div');
+  div.className = `agent-msg ${role === 'user' ? 'agent-user' : 'agent-ai'}`;
+  div.innerHTML = `${escapeHtml(text)}${extraHtml ? '<div class="source-card-embed">' + extraHtml + '</div>' : ''}`;
+  box.appendChild(div);
+  box.parentElement.scrollTop = box.parentElement.scrollHeight;
 }
 
 async function createChatSession() {
@@ -473,23 +424,22 @@ async function loadChatSessions() {
   const data = await api(`/api/v1/chat/sessions${customerId ? `?customer_id=${customerId}` : ''}`);
   const list = document.getElementById('chat-session-list');
   if (!list) return;
-  list.innerHTML = (data.data || []).map(item => {
+  const items = data.data || [];
+  document.getElementById('chat-empty-hint').style.display = items.length ? 'none' : 'block';
+  list.innerHTML = items.map(item => {
     const title = escapeHtml(item.title || `会话 #${item.id}`);
-    return `<li>
-      <button onclick="openChatSession(${item.id}, ${item.customer_id || 'null'}, '${escapeHtml(item.title || '')}')">${title}</button>
-      <span class="button-stack">
-        <button class="secondary" onclick="renameChatSession(${item.id})">重命名</button>
-        <button class="secondary" onclick="deleteChatSession(${item.id})">删除</button>
+    return `<li style="margin-bottom:6px;">
+      <button onclick="openChatSession(${item.id}, ${item.customer_id || 'null'}, '${escapeHtml(item.title || '')}')" style="width:auto; margin:0; padding:4px 8px; font-size:13px;">${title}</button>
+      <span class="button-stack" style="margin-left:4px;">
+        <button class="sm secondary" onclick="renameChatSession(${item.id})">重命名</button>
+        <button class="sm secondary" onclick="deleteChatSession(${item.id})">删除</button>
       </span>
     </li>`;
   }).join('');
-  if (document.getElementById('chat-empty-hint')) {
-    document.getElementById('chat-empty-hint').style.display = (data && data.length) ? 'none' : 'block';
-  }
 }
 
 async function renameChatSession(sessionId) {
-  const current = document.querySelector(`button[onclick="openChatSession(${sessionId}"]`)?.textContent?.replace('重命名','').replace('删除','').trim() || '';
+  const current = document.querySelector(`button[onclick^="openChatSession(${sessionId}"]`)?.textContent?.trim() || '';
   const title = prompt('会话标题', current);
   if (title === null) return;
   const data = await api(`/api/v1/chat/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify({ title: title || '' }) });
@@ -508,8 +458,9 @@ async function deleteChatSession(sessionId) {
       document.getElementById('chat-messages').innerHTML = '<p class="muted">请选择或新建一个会话。</p>';
     }
     await loadChatSessions();
+    showToast('会话已删除', 'success');
   } catch (e) {
-    alert(e.message);
+    showToast(e.message);
   }
 }
 
@@ -532,12 +483,9 @@ async function loadChatMessages(sessionId) {
     if (item.role === 'assistant') {
       try {
         const meta = JSON.parse(item.meta || '{}');
-        const refs = Array.isArray(meta.source_refs) ? meta.source_refs : [];
         const cards = Array.isArray(meta.source_cards) ? meta.source_cards : [];
-        if (refs.length || cards.length) extraHtml = sourceCardsHtml(cards);
-      } catch (e) {
-        console.error(e);
-      }
+        if (cards.length) extraHtml = sourceCardsHtml(cards);
+      } catch (e) { console.error(e); }
     }
     appendChatBubble(item.role, item.content, extraHtml);
   });
@@ -558,52 +506,119 @@ async function sendChatMessage() {
   }
   appendChatBubble('user', text);
   input.value = '';
-  const data = await api(`/api/v1/chat/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify({role:'user', content:text}) });
-  const reply = data.message || {};
-  const cards = sourceCardsHtml(data.source_cards || []);
-  appendChatBubble('assistant', reply.content || '未收到回复', cards);
-  await loadChatSessions();
-  await loadCustomerDetail();
+  setLoading('chat-send', true);
+  try {
+    const data = await api(`/api/v1/chat/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify({role:'user', content:text}) });
+    const reply = data.message || {};
+    const cards = sourceCardsHtml(data.source_cards || []);
+    appendChatBubble('assistant', reply.content || '未收到回复', cards);
+    await loadChatSessions();
+  } catch (e) {
+    showToast(e.message);
+  } finally {
+    setLoading('chat-send', false);
+  }
 }
 
-async function renderMeetingResult(result) {
-  const container = document.getElementById('meeting-result');
-  container.innerHTML = '';
-  if (!result) {
-    container.innerHTML = '<p class="muted">暂无结果</p>';
-    return;
-  }
-  const block = document.createElement('div');
-  block.className = 'result-block';
-  const entries = Object.entries(result).filter(([, value]) => value !== null && value !== undefined && value !== '');
-  for (const [key, value] of entries) {
-    const title = document.createElement('strong');
-    title.textContent = key;
-    const body = document.createElement('div');
-    body.style.whiteSpace = 'pre-wrap';
-    body.style.background = '#f8fafc';
-    body.style.padding = '10px';
-    body.style.borderRadius = '10px';
-    body.style.marginBottom = '10px';
-    if (Array.isArray(value)) {
-      body.innerHTML = value.map(item => {
-        if (typeof item === 'string') return escapeHtml(item);
-        if (item && typeof item === 'object') return escapeHtml(JSON.stringify(item, null, 2));
-        return escapeHtml(String(item));
-      }).join('<br/>');
-    } else if (key === 'llm_source_cards') {
-      body.innerHTML = sourceCardsHtml(Array.isArray(value) ? value : []);
-    } else {
-      body.textContent = typeof value === 'object' ? JSON.stringify(value, null, 2) : value;
-    }
-    const row = document.createElement('div');
-    row.style.marginBottom = '10px';
-    row.appendChild(title);
-    row.appendChild(body);
-    block.appendChild(row);
-  }
-  container.appendChild(block);
+// ─── 知识库 ───
+
+async function loadKnowledgeCases() {
+  const data = await api('/api/v1/knowledge/cases');
+  const tbody = document.getElementById('knowledge-case-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = (data.data || []).map(item => `
+    <tr><td>${escapeHtml(item.code||'')}</td><td>${escapeHtml(item.title||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.industry||'')}</td><td>${escapeHtml(item.result||'')}</td><td>${escapeHtml(item.source||'')}</td></tr>
+  `).join('');
 }
+
+async function createKnowledgeCase() {
+  const payload = {
+    code: document.getElementById('case-code').value.trim(),
+    title: document.getElementById('case-title').value.trim(),
+    type: document.getElementById('case-type').value.trim(),
+    industry: document.getElementById('case-industry').value.trim(),
+    stage: document.getElementById('case-stage').value.trim(),
+    result: document.getElementById('case-result').value.trim(),
+    source: document.getElementById('case-source').value.trim(),
+  };
+  if (!payload.code || !payload.title) return showToast('请填写案例编码和标题');
+  try {
+    await api('/api/v1/knowledge/cases', { method: 'POST', body: JSON.stringify(payload) });
+    document.getElementById('knowledge-case-form').reset();
+    loadKnowledgeCases();
+    showToast('案例已保存', 'success');
+  } catch (e) {
+    showToast(e.message);
+  }
+}
+
+async function loadKnowledgeScripts() {
+  const data = await api('/api/v1/knowledge/scripts');
+  const tbody = document.getElementById('knowledge-script-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = (data.data || []).map(item => `
+    <tr><td>${escapeHtml(item.scene||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.template||'')}</td><td>${escapeHtml(item.source||'')}</td></tr>
+  `).join('');
+}
+
+async function createKnowledgeScript() {
+  const payload = {
+    scene: document.getElementById('script-scene').value.trim(),
+    type: document.getElementById('script-type').value.trim(),
+    template: document.getElementById('script-template').value.trim(),
+    source: document.getElementById('script-source').value.trim(),
+  };
+  if (!payload.type || !payload.template) return showToast('请填写客户类型和话术');
+  try {
+    await api('/api/v1/knowledge/scripts', { method: 'POST', body: JSON.stringify(payload) });
+    document.getElementById('knowledge-script-form').reset();
+    loadKnowledgeScripts();
+    showToast('话术已保存', 'success');
+  } catch (e) {
+    showToast(e.message);
+  }
+}
+
+// ─── Dashboard ───
+
+async function refreshDashboard() {
+  try {
+    const [customers, cases, scripts] = await Promise.all([
+      api('/api/v1/customers'),
+      api('/api/v1/knowledge/cases'),
+      api('/api/v1/knowledge/scripts'),
+    ]);
+    document.getElementById('kpi-customers').textContent = (customers.data || []).length;
+    document.getElementById('kpi-briefing').textContent = (customers.data || []).length;
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// ─── 快速助手 ───
+
+async function askAgent() {
+  const input = document.getElementById('agent-input');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  appendChatBubble('user', text);
+  input.value = '';
+  appendChatBubble('ai', '请使用"客户分析"功能或"AI 助手"页面获取专业建议。');
+}
+
+// ─── 辅助函数 ───
+
+async function populateCustomerSelects() {
+  const selects = ['chat-customer', 'meeting-customer'];
+  for (const id of selects) {
+    const sel = document.getElementById(id);
+    if (!sel) continue;
+    const options = customerCache.map(item => `<option value="${item.id}">${item.id} - ${escapeHtml(item.name || '未命名')}</option>`).join('');
+    sel.innerHTML = '<option value="">选择客户</option>' + options;
+  }
+}
+
+// ─── 初始化 ───
 
 document.addEventListener('DOMContentLoaded', async () => {
   if (authToken) {
@@ -616,17 +631,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       showPage('workbench-page');
       applyRoleVisibility();
       await loadCustomers();
+      await populateCustomerSelects();
       loadKnowledgeCases();
       loadKnowledgeScripts();
       refreshDashboard();
       await loadChatSessions();
       const detail = document.getElementById('customer-detail');
       if (detail) detail.innerHTML = '<p class="muted">请在客户画像选择一条客户查看详情。</p>';
-      const customerSelect = document.getElementById('chat-customer');
-      if (customerSelect) {
-        const list = await api('/api/v1/customers');
-        customerSelect.innerHTML = '<option value="">选择客户</option>' + (list.data || []).map(item => `<option value="${item.id}">${item.id} - ${escapeHtml(item.name || '未命名')}</option>`).join('');
-      }
       const roleLabel = document.getElementById('current-role');
       if (roleLabel) roleLabel.textContent = currentUser?.role ? `当前身份：${currentUser.role}` : '';
     }
@@ -644,12 +655,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       showPage('workbench-page');
       await refreshUserAndVisibility();
       await loadCustomers();
+      await populateCustomerSelects();
       loadKnowledgeCases();
       loadKnowledgeScripts();
       refreshDashboard();
       await loadChatSessions();
     } catch (err) {
-      alert(err.message || '登录失败');
+      showToast(err.message || '登录失败');
     }
   });
 
@@ -662,22 +674,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     await updateCustomerType(customerId);
   });
 
-  document.getElementById('refresh-assist').addEventListener('click', async () => {
-    const customerId = document.getElementById('assist-form').dataset.customerId;
-    await renderAssist(customerId);
-  });
-  document.getElementById('refresh-followup').addEventListener('click', async () => {
-    const customerId = document.getElementById('followup-form').dataset.customerId;
-    await renderFollowup(customerId);
+  document.getElementById('quick-analyze-btn').addEventListener('click', quickAnalyze);
+  document.getElementById('analyze-name').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') quickAnalyze();
   });
 
   document.getElementById('agent-send')?.addEventListener('click', askAgent);
   document.getElementById('agent-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') askAgent();
-  });
-  document.getElementById('quick-analyze-btn')?.addEventListener('click', quickAnalyze);
-  document.getElementById('analyze-name')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') quickAnalyze();
   });
 
   document.getElementById('chat-send')?.addEventListener('click', sendChatMessage);
@@ -690,41 +694,70 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadChatSessions();
     currentSessionId = null;
     document.getElementById('chat-messages').innerHTML = '<p class="muted">已切换客户筛选，请选择或新建一个会话。</p>';
-    const label = document.getElementById('active-session-title');
-    if (label) label.textContent = '当前会话：未选择';
+    document.getElementById('active-session-title').textContent = '当前会话：未选择';
+  });
+
+  document.getElementById('refresh-assist')?.addEventListener('click', async () => {
+    const customerId = document.getElementById('assist-form').dataset.customerId;
+    await renderAssist(customerId);
+  });
+  document.getElementById('refresh-followup')?.addEventListener('click', async () => {
+    const customerId = document.getElementById('followup-form').dataset.customerId;
+    await renderFollowup(customerId);
   });
 
   document.getElementById('briefing-action')?.addEventListener('click', async () => {
     const customerId = Number(document.getElementById('meeting-customer').value);
-    if (!customerId) return alert('请填写客户 ID');
-    const result = await api(`/api/v1/customers/${customerId}/briefing`, { method: 'POST' });
-    await renderMeetingResult(result.data);
+    if (!customerId) return showToast('请选择客户');
+    setLoading('briefing-action', true);
+    try {
+      const result = await api(`/api/v1/customers/${customerId}/briefing`, { method: 'POST' });
+      await renderMeetingResult(result.data);
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      setLoading('briefing-action', false);
+    }
   });
 
   document.getElementById('assist-action')?.addEventListener('click', async () => {
     const customerId = Number(document.getElementById('meeting-customer').value);
-    if (!customerId) return alert('请填写客户 ID');
-    const payload = {
-      current_stage: document.getElementById('meeting-stage').value,
-      transcript: document.getElementById('meeting-transcript').value,
-      customer_type: '',
-    };
-    const result = await api(`/api/v1/customers/${customerId}/assist`, { method: 'POST', body: JSON.stringify(payload) });
-    await renderMeetingResult(result.data);
+    if (!customerId) return showToast('请选择客户');
+    setLoading('assist-action', true);
+    try {
+      const payload = {
+        current_stage: document.getElementById('meeting-stage').value,
+        transcript: document.getElementById('meeting-transcript').value,
+        customer_type: '',
+      };
+      const result = await api(`/api/v1/customers/${customerId}/assist`, { method: 'POST', body: JSON.stringify(payload) });
+      await renderMeetingResult(result.data);
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      setLoading('assist-action', false);
+    }
   });
 
   document.getElementById('followup-action')?.addEventListener('click', async () => {
     const customerId = Number(document.getElementById('meeting-customer').value);
-    if (!customerId) return alert('请填写客户 ID');
-    const payload = {
-      summary: document.getElementById('meeting-transcript').value,
-      decisions: (document.getElementById('meeting-decisions').value || '').split(/；/).filter(Boolean),
-      pending_actions: (document.getElementById('meeting-actions').value || '').split(/；/).filter(Boolean),
-      transcript: document.getElementById('followup-transcript').value,
-      customer_type: '',
-    };
-    const result = await api(`/api/v1/customers/${customerId}/followup`, { method: 'POST', body: JSON.stringify(payload) });
-    await renderMeetingResult(result.data);
+    if (!customerId) return showToast('请选择客户');
+    setLoading('followup-action', true);
+    try {
+      const payload = {
+        summary: document.getElementById('meeting-transcript').value,
+        decisions: (document.getElementById('meeting-decisions').value || '').split(/；/).filter(Boolean),
+        pending_actions: (document.getElementById('meeting-actions').value || '').split(/；/).filter(Boolean),
+        transcript: document.getElementById('followup-transcript').value,
+        customer_type: '',
+      };
+      const result = await api(`/api/v1/customers/${customerId}/followup`, { method: 'POST', body: JSON.stringify(payload) });
+      await renderMeetingResult(result.data);
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      setLoading('followup-action', false);
+    }
   });
 
   document.getElementById('load-customer-detail')?.addEventListener('click', loadCustomerDetail);

@@ -9,16 +9,20 @@
     .page { display: none; }
     .page.active { display: block; }
     .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-    input, select, textarea { width: 100%; padding: 10px 12px; margin: 8px 0 14px; border: 1px solid #e5e7eb; border-radius: 10px; font-size: 14px; }
-    button { padding: 10px 14px; border: 0; border-radius: 10px; background: #2563eb; color: #fff; cursor: pointer; }
+    input, select, textarea { width: 100%; padding: 10px 12px; margin: 8px 0 14px; border: 1px solid #e5e7eb; border-radius: 10px; font-size: 14px; box-sizing: border-box; }
+    button { padding: 10px 14px; border: 0; border-radius: 10px; background: #2563eb; color: #fff; cursor: pointer; font-size: 14px; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #93c5fd; cursor: not-allowed; }
     button.secondary { background: #e5e7eb; color: #111827; }
+    button.secondary:hover { background: #d1d5db; }
+    button.sm { padding: 6px 10px; font-size: 13px; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
     th { color: #6b7280; font-weight: 500; }
     .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
     td .button-stack { display: flex; flex-wrap: wrap; gap: 6px; }
     @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
-    .modal { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.35); align-items: center; justify-content: center; }
+    .modal { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.35); align-items: center; justify-content: center; z-index: 100; }
     .modal-content { background: #fff; width: min(720px, 92vw); max-height: 88vh; overflow: auto; border-radius: 14px; padding: 18px; }
     .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
     .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 230px; background: #0f172a; color: #e2e8f0; padding: 18px; }
@@ -36,18 +40,32 @@
     .agent-input { display: flex; gap: 8px; margin-top: 10px; }
     .agent-input input { margin: 0; flex: 1; }
     .muted { color: #6b7280; }
-    .source-list { padding-left: 18px; margin: 6px 0 0; }
+    .source-list { padding-left: 14px; margin: 0; list-style: none; }
+    .source-list--compact { margin-top: 4px; }
     .source-card { background: #eef2ff; border: 1px solid #e4e8ff; border-radius: 10px; padding: 10px; margin-top: 8px; }
     .source-card-title { font-weight: 600; color: #1f2937; margin-bottom: 6px; }
-    .source-card-embed { background: #eef2ff; border: 1px solid #e4e8ff; border-radius: 10px; padding: 8px; margin-top: 6px; }
-    .source-list { padding-left: 14px; margin: 0; }
-    .source-list--compact { margin-top: 4px; }
     .source-row { display: flex; align-items: center; gap: 8px; }
     .source-source { font-weight: 600; color: #1f2937; }
     .source-badge { font-size: 12px; color: #4f46e5; background: #e0e7ff; padding: 2px 8px; border-radius: 999px; }
     .source-detail { color: #334155; margin-top: 2px; }
     .result-block > div { background: #f8fafc; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
-    @media (max-width: 860px) { .sidebar { position: static; width: auto; } .main { margin-left: 0; } .split { grid-template-columns: 1fr; } .kpi { grid-template-columns: repeat(2, 1fr); } }
+    .result-block h3 { margin: 0 0 8px; }
+    .result-block p { margin: 6px 0; }
+    .analyze-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+    .analyze-row input { flex: 1; min-width: 120px; margin: 0; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge-green { background: #dcfce7; color: #166534; }
+    .badge-gray { background: #f3f4f6; color: #6b7280; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .copy-btn { font-size: 12px; padding: 3px 8px; background: #e5e7eb; color: #374151; border-radius: 6px; cursor: pointer; border: 0; margin-left: 6px; }
+    .copy-btn:hover { background: #d1d5db; }
+    @media (max-width: 860px) {
+      .sidebar { position: static; width: auto; }
+      .main { margin-left: 0; }
+      .split { grid-template-columns: 1fr; }
+      .kpi { grid-template-columns: repeat(2, 1fr); }
+    }
   </style>
 </head>
 <body>
@@ -79,27 +97,29 @@
           <div class="card" style="margin-bottom:16px;">
             <h2 style="margin:0 0 10px;font-size:18px;">客户分析</h2>
             <form id="analyze-form" onsubmit="return false;">
-              <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <input id="analyze-name" placeholder="输入客户名称，回车即分析" style="flex:1; margin:0;" required />
-                <input id="analyze-industry" placeholder="行业（可选）" style="flex:1; margin:0;" />
-                <input id="analyze-stage" placeholder="阶段（可选）" style="flex:1; margin:0;" />
+              <div class="analyze-row">
+                <input id="analyze-name" placeholder="输入客户名称，回车即分析" required />
+                <input id="analyze-industry" placeholder="行业（可选）" />
+                <input id="analyze-stage" placeholder="阶段（可选）" />
                 <button id="quick-analyze-btn" type="button">分析</button>
               </div>
             </form>
             <div id="analyze-result" style="display:none; margin-top:12px;"></div>
           </div>
+
           <div class="kpi" style="margin-bottom:16px;">
             <div class="card"><div class="value" id="kpi-customers">-</div><div class="label">客户数</div></div>
             <div class="card"><div class="value" id="kpi-interactions">-</div><div class="label">互动记录</div></div>
             <div class="card"><div class="value" id="kpi-briefing">-</div><div class="label">简报生成</div></div>
             <div class="card"><div class="value" id="kpi-followup">-</div><div class="label">跟进任务</div></div>
           </div>
+
           <div class="card">
             <h2 style="margin:0 0 10px;font-size:18px;">快速助手</h2>
             <div class="agent-chat" style="min-height:220px;">
               <div id="agent-messages"></div>
               <div class="agent-input">
-                <input id="agent-input" placeholder="例如：帮我准备明天见品牌野心型客户的会前简报" />
+                <input id="agent-input" placeholder="输入你的销售问题..." />
                 <button id="agent-send" type="button">发送</button>
               </div>
             </div>
@@ -108,17 +128,17 @@
 
         <div id="chat-page" class="page">
           <div style="display:grid; grid-template-columns: 260px 1fr; gap:16px;">
-      <div class="card" style="padding:12px;">
-        <h3 style="margin:0 0 8px;font-size:16px;">会话列表</h3>
-        <input id="chat-new-title" placeholder="可选：新会话标题" />
-        <button id="chat-new-session" type="button">新建会话</button>
-        <select id="chat-customer" style="margin:8px 0;"><option value="">选择客户</option></select>
-        <input id="chat-session-id" placeholder="当前会话ID" />
-        <button id="chat-reload" type="button">刷新会话</button>
-        <div id="active-session-title" class="muted" style="font-size:13px;">当前会话：未选择</div>
-        <p id="chat-empty-hint" class="muted" style="font-size:13px;">暂无会话</p>
-        <ul id="chat-session-list" style="padding-left:6px; margin-top:8px; list-style:none;"></ul>
-      </div>
+            <div class="card" style="padding:12px;">
+              <h3 style="margin:0 0 8px;font-size:16px;">会话列表</h3>
+              <input id="chat-new-title" placeholder="可选：新会话标题" />
+              <button id="chat-new-session" type="button" class="sm">新建会话</button>
+              <select id="chat-customer" style="margin:8px 0;"><option value="">选择客户</option></select>
+              <input id="chat-session-id" placeholder="当前会话ID" />
+              <button id="chat-reload" type="button" class="sm">刷新会话</button>
+              <div id="active-session-title" class="muted" style="font-size:13px;">当前会话：未选择</div>
+              <p id="chat-empty-hint" class="muted" style="font-size:13px;">暂无会话</p>
+              <ul id="chat-session-list" style="padding-left:6px; margin-top:8px; list-style:none;"></ul>
+            </div>
             <div class="agent-chat">
               <div id="chat-messages"></div>
               <div class="agent-input">
@@ -154,21 +174,22 @@
           </div>
         </div>
 
-      <div id="customer-detail-page" class="page">
-        <div class="card">
-          <h2 style="margin:0 0 10px;font-size:18px;">客户详情</h2>
-          <input id="customer-detail-id" placeholder="客户 ID" />
-          <button id="load-customer-detail" type="button">加载详情</button>
-          <div id="customer-detail" class="muted" style="margin-top:10px;">请在客户画像选择客户查看详情。</div>
+        <div id="customer-detail-page" class="page">
+          <div class="card">
+            <div class="row" style="margin-bottom:10px;">
+              <h2 style="margin:0;font-size:18px;">客户详情</h2>
+              <button class="secondary sm" onclick="showPage('customers-page')">返回列表</button>
+            </div>
+            <div id="customer-detail" class="muted">请在客户画像选择客户查看详情。</div>
+          </div>
         </div>
-      </div>
 
         <div id="meeting-page" class="page">
           <div class="split">
             <div class="card">
               <h2 style="margin:0 0 10px;font-size:18px;">会前 / 会中 / 会后</h2>
               <form id="meeting-form" onsubmit="return false;">
-                <input id="meeting-customer" placeholder="客户 ID" />
+                <select id="meeting-customer"><option value="">选择客户</option></select>
                 <input id="meeting-stage" placeholder="当前阶段：听/认/比/算/定" value="听" />
                 <textarea id="meeting-transcript" rows="3" placeholder="客户表达或会议摘要"></textarea>
                 <input id="meeting-decisions" placeholder="决策，用中文分号分隔" />
@@ -182,13 +203,13 @@
             </div>
             <div class="card">
               <h2 style="margin:0 0 10px;font-size:18px;">生成结果</h2>
-              <div id="meeting-result" class="muted">请在左侧选择动作。</div>
+              <div id="meeting-result" class="muted">请在左侧选择客户和动作。</div>
             </div>
           </div>
         </div>
 
-      <div id="knowledge-page" class="page" data-admin-only>
-        <div class="card" style="margin-bottom:16px;">
+        <div id="knowledge-page" class="page" data-admin-only>
+          <div class="card" style="margin-bottom:16px;">
             <h2 style="margin:0 0 10px;font-size:18px;">新增案例</h2>
             <form id="knowledge-case-form" onsubmit="return false;">
               <div class="grid">
@@ -285,15 +306,15 @@
   <div id="type-modal" class="modal">
     <div class="modal-content">
       <div class="row" style="margin-bottom:10px;">
-      <h3 style="margin:0;font-size:18px;">更新客户类型</h3>
-      <button class="secondary" onclick="closeModal('type-modal')">关闭</button>
+        <h3 style="margin:0;font-size:18px;">更新客户类型</h3>
+        <button class="secondary" onclick="closeModal('type-modal')">关闭</button>
       </div>
       <form id="type-form" onsubmit="return false;">
         <input id="type-primary" placeholder="主类型，如：品牌野心型" />
         <input id="type-secondary" placeholder="次类型" />
         <input id="type-confidence" type="number" step="0.01" min="0" max="1" placeholder="置信度 0~1" />
         <textarea id="type-evidence" rows="3" placeholder="类型判断依据"></textarea>
-      <button id="save-type" type="button">保存</button>
+        <button id="save-type" type="button">保存</button>
       </form>
     </div>
   </div>
