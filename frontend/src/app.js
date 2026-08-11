@@ -39,7 +39,9 @@ function sourceCardsHtml(cards = []) {
 }
 
 function copyText(text) {
-  navigator.clipboard.writeText(text).catch(() => {});
+  navigator.clipboard.writeText(text).catch(() => {
+    showToast('复制失败，请手动复制', 'error');
+  });
 }
 
 function setLoading(btnId, isLoading) {
@@ -55,8 +57,14 @@ function setLoading(btnId, isLoading) {
 }
 
 function showPage(page) {
-  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
-  document.getElementById(page)?.classList.add('active');
+  const isTopLevel = page === 'login-page' || page === 'workbench-page';
+  if (isTopLevel) {
+    document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+    document.getElementById(page)?.classList.add('active');
+  } else {
+    document.querySelectorAll('#workbench-page .page').forEach(el => el.classList.remove('active'));
+    document.getElementById(page)?.classList.add('active');
+  }
 }
 
 function showToast(message, type = 'error') {
@@ -237,7 +245,7 @@ async function renderBriefing(customerId) {
       <h3>${escapeHtml(payload.customer_name || customerId)}</h3>
       <p><strong>类型：</strong>${escapeHtml(payload.primary_type || '待判断')}${payload.secondary_type ? ' / ' + escapeHtml(payload.secondary_type) : ''} <span class="badge ${payload.confidence ? 'badge-green' : 'badge-gray'}">置信度 ${payload.confidence ?? '-'}</span></p>
       <p><strong>判断依据：</strong>${escapeHtml(payload.evidence || '-')}</p>
-      <p><strong>破冰话术：</strong>${escapeHtml(payload.opening_line || '-')} ${payload.opening_line ? `<button class="copy-btn" onclick="copyText('${escapeHtml(payload.opening_line).replace(/'/g, "\\'")}')">复制</button>` : ''}</p>
+      <p><strong>破冰话术：</strong>${escapeHtml(payload.opening_line || '-')} ${payload.opening_line ? `<button class="copy-btn" data-copy="${escapeHtml(payload.opening_line)}">复制</button>` : ''}</p>
       <p><strong>重点方向：</strong>${escapeHtml(payload.focus || '-')}</p>
       <p><strong>下一步：</strong>${escapeHtml(payload.next_step || '-')}</p>
       <p><strong>潜在异议：</strong>${escapeHtml((payload.potential_objections || []).join('；') || '-')}</p>
@@ -255,7 +263,7 @@ async function renderAssist(customerId) {
   const payload = {
     current_stage: document.getElementById('assist-stage').value,
     transcript: document.getElementById('assist-transcript').value,
-    customer_type: '',
+    customer_type: document.getElementById('assist-type')?.value || '',
   };
   const data = await api(`/api/v1/customers/${customerId}/assist`, { method: 'POST', body: JSON.stringify(payload) });
   const out = data.data || {};
@@ -266,7 +274,7 @@ async function renderAssist(customerId) {
       <h3>会中辅助</h3>
       <p><strong>阶段：</strong>${escapeHtml(out.current_stage || '-')} → 检测到 <strong>${escapeHtml(out.detected_stage || '-')}</strong></p>
       <p><strong>阶段提示：</strong>${escapeHtml(out.stage_guidance || '-')}</p>
-      <p><strong>建议话术：</strong>${escapeHtml(out.suggested_response || '-')} ${out.suggested_response ? `<button class="copy-btn" onclick="copyText('${escapeHtml(out.suggested_response).replace(/'/g, "\\'")}')">复制</button>` : ''}</p>
+      <p><strong>建议话术：</strong>${escapeHtml(out.suggested_response || '-')} ${out.suggested_response ? `<button class="copy-btn" data-copy="${escapeHtml(out.suggested_response)}">复制</button>` : ''}</p>
       <p><strong>异议：</strong>${escapeHtml(out.objection_detected || '未识别')}</p>
       <p><strong>异议应答：</strong>${escapeHtml(out.objection_response || '-')}</p>
       <p><strong>备注：</strong>${escapeHtml((out.notes || []).join(' / ') || '-')}</p>
@@ -302,6 +310,45 @@ async function renderFollowup(customerId) {
   `;
   container.style.display = 'block';
 }
+
+// ─── 渲染会议结果 ───
+
+function renderMeetingResult(payload) {
+  const container = document.getElementById('meeting-result');
+  if (!container) return;
+  const type = payload.primary_type || payload.current_stage || '待判断';
+  const sourceCards = payload.llm_source_cards
+    ? sourceCardsHtml(Array.isArray(payload.llm_source_cards) ? payload.llm_source_cards : JSON.parse(payload.llm_source_cards || '[]'))
+    : '';
+  if (payload.opening_line !== undefined || payload.suggested_response !== undefined) {
+    const line = payload.opening_line || payload.suggested_response || '-';
+    const copyId = 'copy-' + Date.now();
+    container.innerHTML = `
+      <div class="result-block">
+        <h3>${escapeHtml(type)}</h3>
+        ${payload.customer_name ? `<p><strong>客户：</strong>${escapeHtml(payload.customer_name)}</p>` : ''}
+        ${payload.focus ? `<p><strong>重点方向：</strong>${escapeHtml(payload.focus)}</p>` : ''}
+        ${payload.next_step ? `<p><strong>下一步：</strong>${escapeHtml(payload.next_step)}</p>` : ''}
+        ${payload.potential_objections ? `<p><strong>潜在异议：</strong>${escapeHtml(Array.isArray(payload.potential_objections) ? payload.potential_objections.join('；') : String(payload.potential_objections))}</p>` : ''}
+        <p><strong>建议话术：</strong>${escapeHtml(line)} <button class="copy-btn" data-copy="${escapeHtml(line)}">复制</button></p>
+        ${payload.llm_text ? `<p class="muted" style="font-size:12px; margin-top:8px;">LLM 输出：${escapeHtml(String(payload.llm_text).slice(0, 200))}</p>` : ''}
+        ${sourceCards}
+      </div>
+    `;
+  } else {
+    container.innerHTML = `<p class="muted">未生成有效结果</p>`;
+  }
+  container.style.display = 'block';
+}
+
+// 全局复制按钮事件委托
+document.addEventListener('click', (e) => {
+  if (e.target.matches('[data-copy]')) {
+    copyText(e.target.dataset.copy);
+    e.target.textContent = '已复制';
+    setTimeout(() => { e.target.textContent = '复制'; }, 1500);
+  }
+});
 
 // ─── 模态框 ───
 
@@ -376,7 +423,7 @@ async function quickAnalyze() {
         <p><strong>类型：</strong>${escapeHtml(out.primary_type || '待判断')}${out.secondary_type ? ' / ' + escapeHtml(out.secondary_type) : ''}</p>
         <p><strong>置信度：</strong>${escapeHtml(String(out.type_confidence ?? '-'))}</p>
         <p><strong>判断依据：</strong>${escapeHtml(out.type_evidence || '-')}</p>
-        <p><strong>破冰话术：</strong>${escapeHtml(b.opening_line || '-')} ${b.opening_line ? `<button class="copy-btn" onclick="copyText('${escapeHtml(b.opening_line).replace(/'/g, "\\'")}')">复制</button>` : ''}</p>
+        <p><strong>破冰话术：</strong>${escapeHtml(b.opening_line || '-')} ${b.opening_line ? `<button class="copy-btn" data-copy="${escapeHtml(b.opening_line)}">复制</button>` : ''}</p>
         <p><strong>重点方向：</strong>${escapeHtml(b.focus || '-')}</p>
         <p><strong>下一步：</strong>${escapeHtml(b.next_step || '-')}</p>
         <p><strong>潜在异议：</strong>${escapeHtml((b.potential_objections || []).join('；') || '-')}</p>
@@ -420,26 +467,29 @@ async function createChatSession() {
 }
 
 async function loadChatSessions() {
-  const customerId = Number(document.getElementById('chat-customer')?.value || 0) || null;
-  const data = await api(`/api/v1/chat/sessions${customerId ? `?customer_id=${customerId}` : ''}`);
-  const list = document.getElementById('chat-session-list');
-  if (!list) return;
-  const items = data.data || [];
-  document.getElementById('chat-empty-hint').style.display = items.length ? 'none' : 'block';
-  list.innerHTML = items.map(item => {
-    const title = escapeHtml(item.title || `会话 #${item.id}`);
-    return `<li style="margin-bottom:6px;">
-      <button onclick="openChatSession(${item.id}, ${item.customer_id || 'null'}, '${escapeHtml(item.title || '')}')" style="width:auto; margin:0; padding:4px 8px; font-size:13px;">${title}</button>
-      <span class="button-stack" style="margin-left:4px;">
-        <button class="sm secondary" onclick="renameChatSession(${item.id})">重命名</button>
-        <button class="sm secondary" onclick="deleteChatSession(${item.id})">删除</button>
-      </span>
-    </li>`;
-  }).join('');
+  try {
+    const customerId = Number(document.getElementById('chat-customer')?.value || 0) || null;
+    const data = await api(`/api/v1/chat/sessions${customerId ? `?customer_id=${customerId}` : ''}`);
+    const list = document.getElementById('chat-session-list');
+    if (!list) return;
+    const items = data.data || [];
+    document.getElementById('chat-empty-hint').style.display = items.length ? 'none' : 'block';
+    list.innerHTML = items.map(item => {
+      const title = escapeHtml(item.title || `会话 #${item.id}`);
+      return `<li style="margin-bottom:6px;" data-session-id="${item.id}" data-customer-id="${item.customer_id || ''}" data-title="${escapeHtml(item.title || '')}">
+        <button class="open-session-btn" style="width:auto; margin:0; padding:4px 8px; font-size:13px;">${title}</button>
+        <span class="button-stack" style="margin-left:4px;">
+          <button class="sm secondary" onclick="renameChatSession(${item.id})">重命名</button>
+          <button class="sm secondary" onclick="deleteChatSession(${item.id})">删除</button>
+        </span>
+      </li>`;
+    }).join('');
+  } catch (e) { console.error('loadChatSessions:', e); }
 }
 
 async function renameChatSession(sessionId) {
-  const current = document.querySelector(`button[onclick^="openChatSession(${sessionId}"]`)?.textContent?.trim() || '';
+  const li = document.querySelector(`li[data-session-id="${sessionId}"]`);
+  const current = li?.querySelector('.open-session-btn')?.textContent?.trim() || `会话 #${sessionId}`;
   const title = prompt('会话标题', current);
   if (title === null) return;
   const data = await api(`/api/v1/chat/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify({ title: title || '' }) });
@@ -475,24 +525,26 @@ async function openChatSession(sessionId, customerId, title) {
 }
 
 async function loadChatMessages(sessionId) {
-  const data = await api(`/api/v1/chat/sessions/${sessionId}/messages`);
-  const container = document.getElementById('chat-messages');
-  container.innerHTML = '';
-  (data.data || []).forEach((item) => {
-    let extraHtml = '';
-    if (item.role === 'assistant') {
-      try {
-        const meta = JSON.parse(item.meta || '{}');
-        const cards = Array.isArray(meta.source_cards) ? meta.source_cards : [];
-        if (cards.length) extraHtml = sourceCardsHtml(cards);
-      } catch (e) { console.error(e); }
+  try {
+    const data = await api(`/api/v1/chat/sessions/${sessionId}/messages`);
+    const container = document.getElementById('chat-messages');
+    container.innerHTML = '';
+    (data.data || []).forEach((item) => {
+      let extraHtml = '';
+      if (item.role === 'assistant') {
+        try {
+          const meta = JSON.parse(item.meta || '{}');
+          const cards = Array.isArray(meta.source_cards) ? meta.source_cards : [];
+          if (cards.length) extraHtml = sourceCardsHtml(cards);
+        } catch (e) { console.error(e); }
+      }
+      appendChatBubble(item.role, item.content, extraHtml);
+    });
+    if (!container.children.length) {
+      container.innerHTML = '<p class="muted">暂无消息，请直接输入销售问题。</p>';
     }
-    appendChatBubble(item.role, item.content, extraHtml);
-  });
-  if (!container.children.length) {
-    container.innerHTML = '<p class="muted">暂无消息，请直接输入销售问题。</p>';
-  }
-  container.parentElement.scrollTop = container.parentElement.scrollHeight;
+    container.parentElement.scrollTop = container.parentElement.scrollHeight;
+  } catch (e) { console.error('loadChatMessages:', e); }
 }
 
 async function sendChatMessage() {
@@ -523,12 +575,14 @@ async function sendChatMessage() {
 // ─── 知识库 ───
 
 async function loadKnowledgeCases() {
-  const data = await api('/api/v1/knowledge/cases');
-  const tbody = document.getElementById('knowledge-case-table-body');
-  if (!tbody) return;
-  tbody.innerHTML = (data.data || []).map(item => `
-    <tr><td>${escapeHtml(item.code||'')}</td><td>${escapeHtml(item.title||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.industry||'')}</td><td>${escapeHtml(item.result||'')}</td><td>${escapeHtml(item.source||'')}</td></tr>
-  `).join('');
+  try {
+    const data = await api('/api/v1/knowledge/cases');
+    const tbody = document.getElementById('knowledge-case-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = (data.data || []).map(item => `
+      <tr><td>${escapeHtml(item.code||'')}</td><td>${escapeHtml(item.title||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.industry||'')}</td><td>${escapeHtml(item.result||'')}</td><td>${escapeHtml(item.source||'')}</td></tr>
+    `).join('');
+  } catch (e) { console.error('loadKnowledgeCases:', e); }
 }
 
 async function createKnowledgeCase() {
@@ -553,12 +607,14 @@ async function createKnowledgeCase() {
 }
 
 async function loadKnowledgeScripts() {
-  const data = await api('/api/v1/knowledge/scripts');
-  const tbody = document.getElementById('knowledge-script-table-body');
-  if (!tbody) return;
-  tbody.innerHTML = (data.data || []).map(item => `
-    <tr><td>${escapeHtml(item.scene||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.template||'')}</td><td>${escapeHtml(item.source||'')}</td></tr>
-  `).join('');
+  try {
+    const data = await api('/api/v1/knowledge/scripts');
+    const tbody = document.getElementById('knowledge-script-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = (data.data || []).map(item => `
+      <tr><td>${escapeHtml(item.scene||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.template||'')}</td><td>${escapeHtml(item.source||'')}</td></tr>
+    `).join('');
+  } catch (e) { console.error('loadKnowledgeScripts:', e); }
 }
 
 async function createKnowledgeScript() {
@@ -583,13 +639,14 @@ async function createKnowledgeScript() {
 
 async function refreshDashboard() {
   try {
-    const [customers, cases, scripts] = await Promise.all([
-      api('/api/v1/customers'),
+    const [interactions, briefings] = await Promise.all([
       api('/api/v1/knowledge/cases'),
       api('/api/v1/knowledge/scripts'),
     ]);
-    document.getElementById('kpi-customers').textContent = (customers.data || []).length;
-    document.getElementById('kpi-briefing').textContent = (customers.data || []).length;
+    document.getElementById('kpi-customers').textContent = customerCache.length;
+    document.getElementById('kpi-briefing').textContent = customerCache.length;
+    document.getElementById('kpi-interactions').textContent = (interactions.data || []).length;
+    document.getElementById('kpi-followup').textContent = (briefings.data || []).length;
   } catch (e) {
     console.error(e);
   }
@@ -676,16 +733,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('quick-analyze-btn').addEventListener('click', quickAnalyze);
   document.getElementById('analyze-name').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') quickAnalyze();
+    if (e.key === 'Enter' && !document.getElementById('quick-analyze-btn').disabled) quickAnalyze();
   });
 
   document.getElementById('agent-send')?.addEventListener('click', askAgent);
-  document.getElementById('agent-input')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') askAgent();
-  });
+  document.getElementById('agent-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !document.getElementById('agent-send')?.disabled) askAgent(); });
 
   document.getElementById('chat-send')?.addEventListener('click', sendChatMessage);
-  document.getElementById('chat-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+  document.getElementById('chat-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !document.getElementById('chat-send')?.disabled) sendChatMessage(); });
   document.getElementById('chat-new-session')?.addEventListener('click', createChatSession);
   document.getElementById('chat-reload')?.addEventListener('click', async () => {
     if (currentSessionId) await loadChatMessages(currentSessionId);
@@ -695,6 +750,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentSessionId = null;
     document.getElementById('chat-messages').innerHTML = '<p class="muted">已切换客户筛选，请选择或新建一个会话。</p>';
     document.getElementById('active-session-title').textContent = '当前会话：未选择';
+  });
+
+  // 委托：会话列表按钮
+  document.getElementById('chat-session-list')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.open-session-btn');
+    if (!btn) return;
+    const li = btn.closest('li');
+    if (!li) return;
+    const sid = Number(li.dataset.sessionId);
+    const cid = li.dataset.customerId ? Number(li.dataset.customerId) : null;
+    const title = li.dataset.title || '';
+    openChatSession(sid, cid, title);
   });
 
   document.getElementById('refresh-assist')?.addEventListener('click', async () => {
@@ -749,7 +816,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         decisions: (document.getElementById('meeting-decisions').value || '').split(/；/).filter(Boolean),
         pending_actions: (document.getElementById('meeting-actions').value || '').split(/；/).filter(Boolean),
         transcript: document.getElementById('followup-transcript').value,
-        customer_type: '',
+        customer_type: document.getElementById('followup-type')?.value || '',
       };
       const result = await api(`/api/v1/customers/${customerId}/followup`, { method: 'POST', body: JSON.stringify(payload) });
       await renderMeetingResult(result.data);
@@ -759,6 +826,4 @@ document.addEventListener('DOMContentLoaded', async () => {
       setLoading('followup-action', false);
     }
   });
-
-  document.getElementById('load-customer-detail')?.addEventListener('click', loadCustomerDetail);
 });

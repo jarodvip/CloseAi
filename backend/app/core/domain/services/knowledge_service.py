@@ -1,5 +1,6 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.models.knowledge import CustomerTypeKnowledge, Case, Script, Evidence
 from fastapi import HTTPException
 
@@ -33,9 +34,9 @@ def create_case(db: Session, payload: dict) -> Case:
     db.add(record)
     try:
         db.commit()
-    except Exception as exc:
+    except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="案例编码已存在") from exc
+        raise HTTPException(status_code=409, detail="案例编码已存在")
     db.refresh(record)
     return record
 
@@ -45,8 +46,8 @@ def create_script(db: Session, payload: dict) -> Script:
     db.add(record)
     try:
         db.commit()
-    except Exception as exc:
+    except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="话术已存在") from exc
+        raise HTTPException(status_code=409, detail="话术已存在")
     db.refresh(record)
     return record

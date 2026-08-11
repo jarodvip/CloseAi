@@ -13,8 +13,6 @@ from app.models.user import User
 from app.models.knowledge import CustomerTypeKnowledge, Case, Script, Evidence
 from app.core.domain.services.auth_service import create_user
 
-
-ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "knowledge"
 
 
@@ -40,7 +38,6 @@ def init_db():
     Base.metadata.create_all(bind=engine, checkfirst=True)
     db = Session(bind=engine)
     try:
-        # 用户
         if not db.query(User).filter(User.username == "admin").first():
             create_user(db, "admin", "admin123", role="admin")
             create_user(db, "sales", "sales123", role="user")
@@ -50,16 +47,9 @@ def init_db():
                 admin.role = "admin"
                 db.add(admin)
 
-        # 客户类型知识
         _bulk_insert(db, CustomerTypeKnowledge, _load_json("customer_types.json"), "code")
-
-        # 案例
         _bulk_insert(db, Case, _load_json("cases.json"), "code")
-
-        # 话术
         _bulk_insert(db, Script, _load_json("scripts.json"))
-
-        # 数据证言
         _bulk_insert(db, Evidence, _load_json("evidence.json"))
 
         db.commit()

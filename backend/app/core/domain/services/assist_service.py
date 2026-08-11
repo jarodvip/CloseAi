@@ -74,7 +74,7 @@ def _detect_objection(transcript: str):
         "老板不同意": "挖掘老板关心的经营指标，重构方案。",
     }
     for key, value in objections.items():
-        if key in transcript or key in transcript.lower():
+        if key in transcript.lower():
             return key, value
     return None, None
 

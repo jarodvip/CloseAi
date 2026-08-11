@@ -34,6 +34,7 @@
     .kpi .label { color: #6b7280; font-size: 13px; }
     .split { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
     .agent-chat { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; background: #f8fafc; min-height: 260px; display: flex; flex-direction: column; }
+    .agent-chat > div:first-child { flex: 1; overflow-y: auto; }
     .agent-msg { margin: 10px 0; padding: 10px 12px; border-radius: 12px; max-width: 92%; white-space: pre-wrap; }
     .agent-user { background: #2563eb; color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
     .agent-ai { background: #e5e7eb; color: #111827; border-bottom-left-radius: 4px; }
@@ -48,6 +49,7 @@
     .source-source { font-weight: 600; color: #1f2937; }
     .source-badge { font-size: 12px; color: #4f46e5; background: #e0e7ff; padding: 2px 8px; border-radius: 999px; }
     .source-detail { color: #334155; margin-top: 2px; }
+    .source-card-embed { margin-top: 6px; }
     .result-block > div { background: #f8fafc; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
     .result-block h3 { margin: 0 0 8px; }
     .result-block p { margin: 6px 0; }
@@ -165,12 +167,14 @@
           </div>
           <div class="card">
             <h2 style="margin:0 0 10px;font-size:18px;">客户画像</h2>
+            <div style="overflow-x:auto;">
             <table>
               <thead>
                 <tr><th>ID</th><th>名称</th><th>行业</th><th>主类型</th><th>操作</th></tr>
               </thead>
               <tbody id="customer-table-body"></tbody>
             </table>
+            </div>
           </div>
         </div>
 
@@ -226,12 +230,14 @@
           </div>
           <div class="card" style="margin-bottom:16px;">
             <h2 style="margin:0 0 10px;font-size:18px;">案例列表</h2>
+            <div style="overflow-x:auto;">
             <table>
               <thead>
                 <tr><th>编码</th><th>标题</th><th>类型</th><th>行业</th><th>结果</th><th>来源</th></tr>
               </thead>
               <tbody id="knowledge-case-table-body"></tbody>
             </table>
+            </div>
           </div>
           <div class="card" style="margin-bottom:16px;">
             <h2 style="margin:0 0 10px;font-size:18px;">新增话术</h2>
@@ -247,12 +253,14 @@
           </div>
           <div class="card">
             <h2 style="margin:0 0 10px;font-size:18px;">话术列表</h2>
+            <div style="overflow-x:auto;">
             <table>
               <thead>
                 <tr><th>场景</th><th>类型</th><th>话术</th><th>来源</th></tr>
               </thead>
               <tbody id="knowledge-script-table-body"></tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>

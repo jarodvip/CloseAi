@@ -54,13 +54,14 @@ def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = No
         "llm_source_cards": source_cards,
         "created_at": datetime.now().isoformat(),
     }
+    db_payload = {**payload}
     for key in ["recommended_cases", "potential_objections", "source_refs", "llm_source_cards"]:
-        if isinstance(payload.get(key), (list, dict)):
-            payload[key] = _json.dumps(payload[key], ensure_ascii=False)
+        if isinstance(db_payload.get(key), (list, dict)):
+            db_payload[key] = _json.dumps(db_payload[key], ensure_ascii=False)
     record = None
     try:
         record = BriefingHistory(
-            **{k: v for k, v in payload.items() if k in {
+            **{k: v for k, v in db_payload.items() if k in {
                 "customer_id", "session_id", "customer_name", "primary_type", "secondary_type",
                 "confidence", "evidence", "opening_line", "focus", "next_step",
                 "recommended_cases", "potential_objections", "source_refs", "llm_text",
@@ -91,7 +92,7 @@ def list_briefings(db: Session, customer_id: int, limit: int = 20) -> Dict[str, 
             "customer_name": item.customer_name,
             "primary_type": item.primary_type,
             "secondary_type": item.secondary_type,
-            "confidence": item.confidence,
+            "confidence": float(item.confidence) if item.confidence else None,
             "evidence": item.evidence,
             "opening_line": item.opening_line,
             "focus": item.focus,

@@ -1,9 +1,10 @@
 from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
 from app.core.domain.services.common import to_code
-from app.core.domain.services.customer_service import get_customer, list_customers, create_customer
+from app.core.domain.services.customer_service import get_customer, list_customers
 from app.core.domain.services.knowledge_service import get_customer_type_by_code, list_cases, list_evidence
 from app.core.domain.services.briefing_service import build_briefing
+from app.schemas.customer import CustomerIn
 
 
 def analyze_customer(db: Session, payload: dict) -> Dict[str, Any]:
@@ -11,7 +12,6 @@ def analyze_customer(db: Session, payload: dict) -> Dict[str, Any]:
     if not name:
         return {"error": "客户名称不能为空"}
 
-    # 根据名称查找已有客户
     existing = list_customers(db)
     matched = next((c for c in existing if c.name == name), None)
 
@@ -19,13 +19,7 @@ def analyze_customer(db: Session, payload: dict) -> Dict[str, Any]:
         customer_id = matched.id
         customer = matched
     else:
-        customer = create_customer(db, {
-            "name": name,
-            "industry": payload.get("industry"),
-            "revenue_range": payload.get("revenue_range"),
-            "stage": payload.get("stage"),
-            "region": payload.get("region"),
-        })
+        customer = create_customer(db, CustomerIn(**{k: v for k, v in payload.items() if k in {"name", "industry", "revenue_range", "stage", "region"}}))
         customer_id = customer.id
 
     # 如果客户还没有类型，基于 LLM 推断
@@ -34,9 +28,6 @@ def analyze_customer(db: Session, payload: dict) -> Dict[str, Any]:
 
     # 生成会前简报
     briefing = build_briefing(db, customer_id)
-    if not briefing:
-        return {"error": f"客户 {name} 不存在"}
-
     return {
         "customer_id": customer_id,
         "customer_name": customer.name,
@@ -72,7 +63,7 @@ def _infer_type(db: Session, customer, payload: dict) -> Any:
     try:
         result = generate_text(prompt)
         predicted = result.strip().split("\n")[0].strip()
-        matched_type = next((t for t in types if t.name in predicted or predicted in t.name), None)
+        matched_type = next((t for t in types if predicted in t.name or t.name in predicted), None)
         if matched_type:
             customer.primary_type = matched_type.name
             customer.type_confidence = 0.7

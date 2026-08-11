@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     # 数据库配置
     DATABASE_URL: str = "sqlite:///./sales_agent.db"
 
-    # JWT 安全配置
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    # JWT 安全配置 — 生产环境必须通过环境变量设置强密钥
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_HOURS: int = 24
 
