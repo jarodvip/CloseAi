@@ -76,6 +76,18 @@
       </div>
       <div class="main">
         <div id="home-page" class="page active">
+          <div class="card" style="margin-bottom:16px;">
+            <h2 style="margin:0 0 10px;font-size:18px;">客户分析</h2>
+            <form id="analyze-form" onsubmit="return false;">
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <input id="analyze-name" placeholder="输入客户名称，回车即分析" style="flex:1; margin:0;" required />
+                <input id="analyze-industry" placeholder="行业（可选）" style="flex:1; margin:0;" />
+                <input id="analyze-stage" placeholder="阶段（可选）" style="flex:1; margin:0;" />
+                <button id="quick-analyze-btn" type="button">分析</button>
+              </div>
+            </form>
+            <div id="analyze-result" style="display:none; margin-top:12px;"></div>
+          </div>
           <div class="kpi" style="margin-bottom:16px;">
             <div class="card"><div class="value" id="kpi-customers">-</div><div class="label">客户数</div></div>
             <div class="card"><div class="value" id="kpi-interactions">-</div><div class="label">互动记录</div></div>

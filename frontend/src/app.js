@@ -342,6 +342,42 @@ async function createKnowledgeScript() {
   loadKnowledgeScripts();
 }
 
+async function quickAnalyze() {
+  const nameInput = document.getElementById('analyze-name');
+  const name = (nameInput.value || '').trim();
+  if (!name) return alert('请输入客户名称');
+  const industry = document.getElementById('analyze-industry').value;
+  const stage = document.getElementById('analyze-stage').value;
+  const container = document.getElementById('analyze-result');
+  container.style.display = 'block';
+  container.innerHTML = '<p class="muted">正在分析中...</p>';
+  try {
+    const payload = { name, industry, stage };
+    const data = await api('/api/v1/analyze', { method: 'POST', body: JSON.stringify(payload) });
+    const out = data.data || {};
+    const b = out.briefing || {};
+    const sourceCards = sourceCardsHtml(b.llm_source_cards || []);
+    container.innerHTML = `
+      <div class="result-block">
+        ${out.is_new ? '<p style="color:#16a34a;font-weight:600;">新客户已创建</p>' : '<p class="muted">已找到已有客户</p>'}
+        <h3>${escapeHtml(out.customer_name || name)}</h3>
+        <p><strong>类型：</strong>${escapeHtml(out.primary_type || '待判断')}${out.secondary_type ? ' / ' + escapeHtml(out.secondary_type) : ''}</p>
+        <p><strong>置信度：</strong>${escapeHtml(String(out.type_confidence ?? '-'))}</p>
+        <p><strong>判断依据：</strong>${escapeHtml(out.type_evidence || '-')}</p>
+        <p><strong>破冰话术：</strong>${escapeHtml(b.opening_line || '-')}</p>
+        <p><strong>重点方向：</strong>${escapeHtml(b.focus || '-')}</p>
+        <p><strong>下一步：</strong>${escapeHtml(b.next_step || '-')}</p>
+        <p><strong>潜在异议：</strong>${escapeHtml((b.potential_objections || []).join('；') || '-')}</p>
+        ${sourceCards}
+        <p><strong>LLM：</strong>${escapeHtml(b.llm_text || '未生成')}</p>
+      </div>
+    `;
+    await loadCustomers();
+  } catch (e) {
+    container.innerHTML = `<p style="color:#dc2626;">分析失败：${e.message}</p>`;
+  }
+}
+
 async function refreshDashboard() {
   try {
     const [customers, cases, scripts] = await Promise.all([
@@ -638,6 +674,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('agent-send')?.addEventListener('click', askAgent);
   document.getElementById('agent-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') askAgent();
+  });
+  document.getElementById('quick-analyze-btn')?.addEventListener('click', quickAnalyze);
+  document.getElementById('analyze-name')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') quickAnalyze();
   });
 
   document.getElementById('chat-send')?.addEventListener('click', sendChatMessage);

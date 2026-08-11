@@ -3,6 +3,7 @@ from datetime import datetime
 import json as _json
 
 from sqlalchemy.orm import Session
+from app.core.domain.services.common import build_source_cards_for_cases, build_system_prompt, to_code
 from app.core.domain.services.customer_service import get_customer
 from app.core.domain.services.knowledge_service import get_customer_type_by_code, list_cases, list_evidence
 from app.core.domain.services.llm_service import generate_text
@@ -15,7 +16,7 @@ def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = No
     primary_type = customer.primary_type
     type_info = None
     if primary_type:
-        type_info = get_customer_type_by_code(db, _to_code(primary_type))
+        type_info = get_customer_type_by_code(db, to_code(primary_type))
     cases = [{"code": item.code, "title": item.title, "type": item.type, "industry": item.industry, "stage": item.stage, "result": item.result, "source": item.source} for item in list_cases(db, primary_type or "")][:3]
     evidence = list_evidence(db)[:3]
     evidence_text = "；".join([f"{e.source}: {e.metric}={e.value}" for e in evidence if e.source and e.value])
@@ -30,10 +31,10 @@ def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = No
 请输出：判断依据、破冰话术、重点方向、推荐案例要点、潜在异议、下一步动作、来源说明。"""
     llm_text = ""
     try:
-        llm_text = generate_text(prompt, system=_system_prompt(customer, type_info, evidence))
+        llm_text = generate_text(prompt, system=build_system_prompt("briefing", primary_type or "待判断", type_info, evidence, customer=customer))
     except Exception:
         llm_text = ""
-    source_cards = _build_source_cards(type_info, cases, evidence)
+    source_cards = build_source_cards_for_cases(type_info, cases, evidence)
     source_refs = [card["source"] for card in source_cards]
     payload = {
         "customer_id": customer_id,
@@ -74,14 +75,7 @@ def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = No
         db.rollback()
     return payload
 
-def _serialize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    try:
-        return _json.loads(_json.dumps(payload, ensure_ascii=False, default=str))
-    except Exception:
-        pass
-    return _serialize_payload(payload)
-
-def list_briefings(db: Session, customer_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+def list_briefings(db: Session, customer_id: int, limit: int = 20) -> Dict[str, Any]:
     items = (
         db.query(BriefingHistory)
         .filter(BriefingHistory.customer_id == customer_id)
@@ -120,49 +114,3 @@ def _safe_json(value, default=None):
         return json.loads(value)
     except Exception:
         return default
-
-def _to_code(name: str) -> str:
-    mapping = {
-        "品牌野心型": "BRAND_AMBITION",
-        "定位卡位型": "POSITIONING",
-        "品类开创者型": "CATEGORY_CREATOR",
-        "竞争突围型": "COMPETITIVE_BREAKOUT",
-        "资本叙事型": "CAPITAL_NARRATIVE",
-        "全国化扩张型": "NATIONAL_EXPANSION",
-        "品牌焕新型": "BRAND_REJUVENATION",
-    }
-    return mapping.get(name, name.upper())
-
-def _system_prompt(customer, type_info, evidence) -> str:
-    name = customer.name if customer else "潜在客户"
-    ctype = type_info.name if type_info else (customer.primary_type or "待判断")
-    evidence_text = "；".join([f"{e.source}: {e.metric}={e.value}" for e in evidence[:3] if e.source and e.value])
-    return (
-        "你是销售作战助手，输出简洁、可执行、专业的中文建议。"
-        f"客户：{name}；类型：{ctype}。"
-        f"权威证据：{evidence_text or '暂无'}。"
-        "请在建议中明确引用来源。"
-    )
-
-def _build_source_cards(type_info, cases, evidence) -> List[Dict[str, Optional[str]]]:
-    cards: List[Dict[str, Optional[str]]] = []
-    seen = set()
-
-    def add(source: Optional[str], label: str, detail: Optional[str] = None, scene: Optional[str] = None):
-        if not source:
-            return
-        key = (source, label, detail or "")
-        if key in seen:
-            return
-        seen.add(key)
-        cards.append({"source": source, "label": label, "detail": detail, "scene": scene})
-
-    if type_info and type_info.source:
-        add(type_info.source, "客户类型策略", type_info.strategy, type_info.name)
-    for item in cases:
-        if item.get("source"):
-            add(item.get("source"), f"案例：{item.get('title')}", f"{item.get('type')} / {item.get('industry')} / {item.get('stage')}")
-    for item in evidence:
-        if item.source_ref or item.source:
-            add(item.source_ref or item.source, f"证据：{item.metric}", item.value, item.scene)
-    return cards

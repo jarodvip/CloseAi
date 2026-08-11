@@ -1,5 +1,7 @@
 """主应用入口 - 简化重构版"""
 
+from datetime import datetime
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
