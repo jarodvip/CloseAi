@@ -8,12 +8,12 @@ def get_customer(db: Session, customer_id: int) -> Optional[Customer]:
     return db.query(Customer).filter(Customer.id == customer_id).first()
 
 
-def list_customers(db: Session) -> list:
-    return db.query(Customer).order_by(Customer.id.asc()).all()
+def list_customers(db: Session, owner_id: int) -> list:
+    return db.query(Customer).filter(Customer.owner_id == owner_id).order_by(Customer.id.asc()).all()
 
 
-def create_customer(db: Session, customer_in: CustomerIn) -> Customer:
-    customer = Customer(**customer_in.model_dump())
+def create_customer(db: Session, customer_in: CustomerIn, owner_id: int) -> Customer:
+    customer = Customer(**customer_in.model_dump(), owner_id=owner_id)
     db.add(customer)
     db.commit()
     db.refresh(customer)

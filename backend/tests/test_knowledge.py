@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from app.main import app
+from app.db.init_db import init_db
 
 client = TestClient(app)
 token = None
@@ -7,6 +8,7 @@ token = None
 
 def test_login():
     global token
+    init_db()
     token = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"}).json()["access_token"]
 
 

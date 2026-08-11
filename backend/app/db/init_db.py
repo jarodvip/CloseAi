@@ -4,7 +4,7 @@ import json
 
 from sqlalchemy.orm import Session
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
@@ -31,7 +31,12 @@ def _bulk_insert(db: Session, model, records: list, unique_field: str = None):
         if unique_field:
             if db.query(model).filter(getattr(model, unique_field) == record[unique_field]).first():
                 continue
-        db.add(model(**record))
+        data = {}
+        for k, v in record.items():
+            if isinstance(v, (list, dict)):
+                v = json.dumps(v, ensure_ascii=False)
+            data[k] = v
+        db.add(model(**data))
 
 
 def init_db():

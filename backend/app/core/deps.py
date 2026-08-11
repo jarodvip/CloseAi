@@ -4,6 +4,9 @@ from typing import Optional, Dict
 
 from app.core.config import settings
 from app.core.security import decode_access_token
+from app.models.customer import Customer
+from sqlalchemy.orm import Session
+from app.db.session import SessionLocal
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/login", auto_error=False)
 
@@ -39,3 +42,23 @@ async def require_admin(user: Dict = Depends(require_user)) -> Dict:
             detail="权限不足：需要 admin 角色"
         )
     return user
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def assert_owner(db: Session, customer_id: int, user: Dict):
+    """校验当前用户是否为客户的 owner，不是则返回 404"""
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer or customer.owner_id != _user_id(db, user):
+        raise HTTPException(status_code=404, detail="customer not found")
+
+
+def _user_id(db: Session, user: Dict) -> int:
+    from app.models.user import User
+    return db.query(User.id).filter(User.username == user.get("username")).scalar()

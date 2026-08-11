@@ -1,9 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class LoginIn(BaseModel):
-    username: str
+    username: str = Field(max_length=50)
     password: str
 
 

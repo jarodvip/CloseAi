@@ -1,19 +1,19 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class CaseIn(BaseModel):
-    code: str
-    title: str
-    type: Optional[str] = None
-    industry: Optional[str] = None
-    stage: Optional[str] = None
+    code: str = Field(max_length=50)
+    title: str = Field(max_length=150)
+    type: Optional[str] = Field(default=None, max_length=100)
+    industry: Optional[str] = Field(default=None, max_length=100)
+    stage: Optional[str] = Field(default=None, max_length=100)
     result: Optional[str] = None
-    source: Optional[str] = None
+    source: Optional[str] = Field(default=None, max_length=255)
 
 
 class ScriptIn(BaseModel):
-    scene: Optional[str] = None
-    type: str
+    scene: Optional[str] = Field(default=None, max_length=100)
+    type: str = Field(max_length=100)
     template: str
-    source: Optional[str] = None
+    source: Optional[str] = Field(default=None, max_length=255)

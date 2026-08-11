@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.models.customer import Customer
+from app.db.init_db import init_db
 
 client = TestClient(app)
 token = None
@@ -13,16 +14,20 @@ token = None
 
 def test_login():
     global token
+    # 确保测试所需的客户和知识数据存在
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    for username in ["admin", "sales"]:
-        if not db.query(User).filter(User.username == username).first():
-            create_user(db, username, f"{username}123", role="admin" if username == "admin" else "user")
-    if not db.query(Customer).filter(Customer.id == 1).first():
-        db.add(Customer(name="示例客户A", industry="消费", stage="全国化扩张", region="华东"))
-        db.flush()
-    db.commit()
-    db.close()
+    try:
+        if not db.query(User).filter(User.username == "admin").first():
+            create_user(db, "admin", "admin123", role="admin")
+        admin = db.query(User).filter(User.username == "admin").first()
+        if not db.query(Customer).filter(Customer.id == 1).first():
+            db.add(Customer(name="示例客户A", industry="消费", stage="全国化扩张", region="华东", owner_id=admin.id))
+            db.flush()
+        db.commit()
+    finally:
+        db.close()
+    init_db()
     token = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123"}).json()["access_token"]
 
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
 from app.db.session import Base
 from datetime import datetime
 
@@ -7,8 +7,8 @@ class BriefingHistory(Base):
     __tablename__ = "briefing_history"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, nullable=False, index=True)
-    session_id = Column(Integer, nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("chat_sessions.id"), nullable=True)
     customer_name = Column(String(120), nullable=True)
     primary_type = Column(String(100), nullable=True)
     secondary_type = Column(String(100), nullable=True)

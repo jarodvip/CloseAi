@@ -2,22 +2,15 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.schemas.briefing import BriefingOut
 from app.core.domain.services.briefing_service import build_briefing, list_briefings
-from app.core.deps import get_current_user
-from app.db.session import SessionLocal
+from app.core.deps import get_db, require_user, assert_owner
+from app.core.domain.services.customer_service import get_customer
 
 router = APIRouter()
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.post("/{customer_id}/briefing", response_model=dict)
-def generate_briefing(customer_id: int, session_id: int | None = None, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def generate_briefing(customer_id: int, session_id: int | None = None, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    assert_owner(db, customer_id, user)
     payload = build_briefing(db, customer_id, session_id=session_id)
     if not payload:
         raise HTTPException(status_code=404, detail="customer not found")
@@ -30,9 +23,8 @@ def generate_briefing(customer_id: int, session_id: int | None = None, db: Sessi
 
 
 @router.get("/{customer_id}/briefing-history", response_model=dict)
-def get_briefing_history(customer_id: int, limit: int = 20, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    customer = None
-    from app.core.domain.services.customer_service import get_customer
+def get_briefing_history(customer_id: int, limit: int = 20, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    assert_owner(db, customer_id, user)
     customer = get_customer(db, customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="customer not found")

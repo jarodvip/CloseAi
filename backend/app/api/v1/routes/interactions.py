@@ -5,22 +5,14 @@ from app.core.domain.services.interaction_service import create_interaction, lis
 from app.core.domain.services.customer_service import get_customer
 from app.core.domain.services.assist_service import build_assist
 from app.core.domain.services.followup_service import build_followup
-from app.core.deps import get_current_user, require_user
-from app.db.session import SessionLocal
+from app.core.deps import get_db, require_user, assert_owner
 
 router = APIRouter()
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.post("/{customer_id}/interactions", response_model=InteractionOut)
 def create_interaction_route(customer_id: int, payload: InteractionIn, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    assert_owner(db, customer_id, user)
     customer = get_customer(db, customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="customer not found")
@@ -28,12 +20,14 @@ def create_interaction_route(customer_id: int, payload: InteractionIn, db: Sessi
 
 
 @router.get("/{customer_id}/interactions", response_model=list[InteractionOut])
-def list_interactions_route(customer_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def list_interactions_route(customer_id: int, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    assert_owner(db, customer_id, user)
     return list_interactions(db, customer_id)
 
 
 @router.post("/{customer_id}/assist")
-def assist_route(customer_id: int, payload: AssistIn, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def assist_route(customer_id: int, payload: AssistIn, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    assert_owner(db, customer_id, user)
     customer = get_customer(db, customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="customer not found")
@@ -51,7 +45,8 @@ def assist_route(customer_id: int, payload: AssistIn, db: Session = Depends(get_
 
 
 @router.post("/{customer_id}/followup")
-def followup_route(customer_id: int, payload: FollowupIn, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def followup_route(customer_id: int, payload: FollowupIn, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    assert_owner(db, customer_id, user)
     customer = get_customer(db, customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="customer not found")

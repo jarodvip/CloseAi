@@ -7,19 +7,19 @@ from app.core.domain.services.briefing_service import build_briefing
 from app.schemas.customer import CustomerIn
 
 
-def analyze_customer(db: Session, payload: dict) -> Dict[str, Any]:
+def analyze_customer(db: Session, payload: dict, owner_id: int = 0) -> Dict[str, Any]:
     name = (payload.get("name") or "").strip()
     if not name:
         return {"error": "客户名称不能为空"}
 
-    existing = list_customers(db)
+    existing = list_customers(db, owner_id)
     matched = next((c for c in existing if c.name == name), None)
 
     if matched:
         customer_id = matched.id
         customer = matched
     else:
-        customer = create_customer(db, CustomerIn(**{k: v for k, v in payload.items() if k in {"name", "industry", "revenue_range", "stage", "region"}}))
+        customer = create_customer(db, CustomerIn(**{k: v for k, v in payload.items() if k in {"name", "industry", "revenue_range", "stage", "region"}}), owner_id)
         customer_id = customer.id
 
     # 如果客户还没有类型，基于 LLM 推断
