@@ -16,14 +16,21 @@ def check(name, condition, detail=""):
     return condition
 
 
-def request(path, payload=None, headers=None, method=None):
+def request(path, payload=None, headers=None, method=None, expect_status=None):
     data = None
     if payload is not None:
         data = json.dumps(payload).encode()
         headers = {"content-type": "application/json", **(headers or {})}
     req = urllib.request.Request(f"{BASE}{path}", data=data, headers=headers or {}, method=method)
-    with urllib.request.urlopen(req) as res:
-        body = res.read().decode() or "{}"
+    try:
+        with urllib.request.urlopen(req) as res:
+            body = res.read().decode() or "{}"
+            status = res.status
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode() or "{}"
+        status = exc.code
+        if expect_status is not None and status != expect_status:
+            raise
     try:
         return json.loads(body)
     except json.JSONDecodeError:
@@ -31,7 +38,10 @@ def request(path, payload=None, headers=None, method=None):
 
 
 def frontend_contains(text):
-    with urllib.request.urlopen(f"{FRONTEND_BASE}/src/app.js") as res:
+    req = urllib.request.Request(f"{FRONTEND_BASE}/src/app.js")
+    req.add_header("Cache-Control", "no-cache")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(req) as res:
         body = res.read().decode()
     return text in body
 
@@ -92,19 +102,19 @@ def main():
     results.append(check("login_sales", bool(sales_token) and sales_login.get("role") == "user", detail=f"role={sales_login.get('role')}"))
 
     sales_headers = {"authorization": f"Bearer {sales_token}"}
-    admin_knowledge = request("/api/v1/knowledge/cases", headers=sales_headers, method="POST")
-    results.append(check("sales_knowledge_forbidden", admin_knowledge.get("detail") == "权限不足", detail=f"detail={admin_knowledge.get('detail')}"))
+    admin_knowledge = request("/api/v1/knowledge/cases", headers=sales_headers, method="POST", expect_status=403)
+    results.append(check("sales_knowledge_forbidden", "权限不足" in (admin_knowledge.get("detail") or ""), detail=f"detail={admin_knowledge.get('detail')}"))
 
     knowledge_cases = request("/api/v1/knowledge/cases", headers=auth_headers)
-    results.append(check("knowledge_cases_api", isinstance(knowledge_cases, list) and len(knowledge_cases) >= 1, detail="admin_can_read"))
+    results.append(check("knowledge_cases_api", isinstance(knowledge_cases.get("data"), list) and len(knowledge_cases.get("data", [])) >= 1, detail="admin_can_read"))
 
     html_checks = [
         ("source_card_component", "source-card"),
         ("source_card_title", "引用来源"),
         ("briefing_history_heading", "会前简报历史"),
-        ("briefing_history_table_header", "来源卡"),
-        ("assist_modal_result_anchor", 'id="assist-result"'),
-        ("followup_modal_result_anchor", 'id="followup-result"'),
+        ("briefing_history_table_header", "引用来源"),
+        ("assist_modal_result_anchor", "getElementById('assist-result')"),
+        ("followup_modal_result_anchor", "getElementById('followup-result')"),
         ("chat_rename_button", 'renameChatSession'),
         ("chat_session_title", '当前会话：'),
         ("knowledge_page_admin_only", 'data-admin-only'),

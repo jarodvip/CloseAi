@@ -4,6 +4,88 @@ let currentUser = null;
 let currentSessionId = null;
 let currentCustomerId = null;
 let customerCache = [];
+let appOptions = null;
+
+// 标签选择状态
+const selectedTags = { decisions: new Set(), actions: new Set() };
+
+const DEFAULT_OPTIONS = {
+  industries: ['母婴', '食品', '饮料', '美妆家电', '新消费', '餐饮', '服饰', '其他'],
+  stages: ['初创期', '成长期', '扩张期', '成熟期', '转型期'],
+  customer_types: [
+    {code: 'BRAND_AMBITION', name: '品牌野心型'},
+    {code: 'POSITIONING', name: '定位卡位型'},
+    {code: 'CATEGORY_CREATOR', name: '品类开创者型'},
+    {code: 'COMPETITIVE_BREAKOUT', name: '竞争突围型'},
+    {code: 'CAPITAL_NARRATIVE', name: '资本叙事型'},
+    {code: 'NATIONAL_EXPANSION', name: '全国化扩张型'},
+    {code: 'BRAND_REJUVENATION', name: '品牌焕新型'},
+  ],
+  scenes: ['破冰', '异议应答', '逼单', '售后', '转介绍'],
+  decisions: ['确定合作', '暂缓', '需再评估', '指定负责人', '明确预算'],
+  actions: ['发方案', '约下次会议', '内部评审', '报价', '寄样品'],
+};
+
+function getOptions() {
+  return appOptions || DEFAULT_OPTIONS;
+}
+
+async function loadOptions() {
+  try {
+    const data = await api('/api/v1/knowledge/options');
+    if (data && data.data) {
+      appOptions = data.data;
+    }
+  } catch (e) {
+    console.error('loadOptions failed:', e);
+  }
+  populateOptions();
+}
+
+function populateOptions() {
+  const options = getOptions();
+  const industrySelects = ['cust-industry', 'case-industry'];
+  const stageSelects = ['cust-stage', 'case-stage', 'filter-stage'];
+  const typeSelects = ['case-type', 'script-type', 'type-primary'];
+  const sceneSelects = ['script-scene'];
+  const assistTypeSelects = ['assist-type'];
+
+  industrySelects.forEach(id => fillSelect(id, options.industries || [], '请选择行业'));
+  stageSelects.forEach(id => fillSelect(id, options.stages || [], '请选择阶段'));
+  typeSelects.forEach(id => fillSelect(id, (options.customer_types || []).map(t => t.name), '请选择客户类型'));
+  sceneSelects.forEach(id => fillSelect(id, options.scenes || [], '请选择场景'));
+  assistTypeSelects.forEach(id => fillSelect(id, (options.customer_types || []).map(t => t.name), '请选择客户类型'));
+
+  // 分析页下拉
+  fillSelect('analyze-industry', options.industries || [], '行业（可选）');
+  fillSelect('analyze-stage', options.stages || [], '阶段（可选）');
+
+  // 标签选项
+  const decisionsContainer = document.getElementById('followup-decisions');
+  const actionsContainer = document.getElementById('followup-actions');
+  if (decisionsContainer && !decisionsContainer.dataset.populated) {
+    decisionsContainer.dataset.populated = 'true';
+    decisionsContainer.innerHTML = (options.decisions || []).map(d =>
+      `<span class="tag" onclick="toggleTag(this)" data-group="decisions">${escapeHtml(d)}</span>`
+    ).join('');
+  }
+  if (actionsContainer && !actionsContainer.dataset.populated) {
+    actionsContainer.dataset.populated = 'true';
+    actionsContainer.innerHTML = (options.actions || []).map(a =>
+      `<span class="tag" onclick="toggleTag(this)" data-group="actions">${escapeHtml(a)}</span>`
+    ).join('');
+  }
+}
+
+function fillSelect(id, items, placeholder) {
+  const el = document.getElementById(id);
+  if (!el || el.dataset.populated) return;
+  el.dataset.populated = 'true';
+  const currentValue = el.value;
+  const options = items.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
+  el.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>${options}`;
+  if (currentValue) el.value = currentValue;
+}
 
 async function api(path, options = {}) {
   const url = `${baseApi}${path}`;
@@ -39,9 +121,8 @@ function sourceCardsHtml(cards = []) {
 }
 
 function copyText(text) {
-  navigator.clipboard.writeText(text).catch(() => {
-    showToast('复制失败，请手动复制', 'error');
-  });
+  navigator.clipboard.writeText(text).catch(() => {});
+  showToast('📋 已复制到剪贴板', 'success');
 }
 
 function setLoading(btnId, isLoading) {
@@ -57,28 +138,35 @@ function setLoading(btnId, isLoading) {
 }
 
 function showPage(page) {
-  const isTopLevel = page === 'login-page' || page === 'workbench-page';
-  if (isTopLevel) {
-    document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
-    document.getElementById(page)?.classList.add('active');
-  } else {
-    document.querySelectorAll('#workbench-page .page').forEach(el => el.classList.remove('active'));
-    document.getElementById(page)?.classList.add('active');
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+  const target = document.getElementById(page);
+  if (target) target.classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.page === page);
+  });
+  if (page === 'dashboard-page') loadDashboard();
+  if (window.innerWidth <= 860) {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('show');
   }
 }
 
-function showToast(message, type = 'error') {
-  let toast = document.getElementById('toast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'toast';
-    toast.style.cssText = 'position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:10px;color:#fff;font-size:14px;z-index:999;transition:opacity 0.3s;max-width:400px;';
-    document.body.appendChild(toast);
-  }
-  toast.style.background = type === 'success' ? '#16a34a' : '#dc2626';
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
   toast.textContent = message;
-  toast.style.opacity = '1';
-  setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(20px)';
+    setTimeout(() => toast.remove(), 200);
+  }, 2500);
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('show');
 }
 
 async function fetchCurrentUser() {
@@ -112,22 +200,43 @@ async function loadCustomers() {
   const tbody = document.getElementById('customer-table-body');
   if (!tbody) return;
   tbody.innerHTML = customerCache.map(item => `
-    <tr>
+    <tr data-name="${escapeHtml(item.name || '')}" data-type="${escapeHtml(item.primary_type || '')}" data-stage="${escapeHtml(item.stage || '')}">
       <td>${item.id}</td>
       <td>${escapeHtml(item.name || '')}</td>
       <td>${escapeHtml(item.industry || '-')}</td>
+      <td>${escapeHtml(item.stage || '-')}</td>
       <td>${escapeHtml(item.primary_type || '-')}</td>
       <td>
         <span class="button-stack">
-          <button class="sm" onclick="viewCustomerDetail(${item.id})">详情</button>
+          <button class="sm secondary" onclick="viewCustomerDetail(${item.id})">详情</button>
           <button class="sm" onclick="openBriefing(${item.id})">简报</button>
           <button class="sm" onclick="openAssist(${item.id})">会中</button>
           <button class="sm" onclick="openFollowup(${item.id})">跟进</button>
-          <button class="sm" onclick="openTypeForm(${item.id})">类型</button>
         </span>
       </td>
     </tr>
   `).join('');
+  filterCustomers();
+}
+
+function filterCustomers() {
+  const search = (document.getElementById('customer-search')?.value || '').toLowerCase();
+  const typeFilter = document.getElementById('filter-type')?.value || '';
+  const stageFilter = document.getElementById('filter-stage')?.value || '';
+  const rows = document.querySelectorAll('#customer-table-body tr');
+  let visibleCount = 0;
+  rows.forEach(row => {
+    const name = (row.dataset.name || '').toLowerCase();
+    const type = row.dataset.type || '';
+    const stage = row.dataset.stage || '';
+    const matchSearch = !search || name.includes(search);
+    const matchType = !typeFilter || type === typeFilter;
+    const matchStage = !stageFilter || stage === stageFilter;
+    row.style.display = (matchSearch && matchType && matchStage) ? '' : 'none';
+    if (matchSearch && matchType && matchStage) visibleCount++;
+  });
+  const empty = document.getElementById('customer-empty');
+  if (empty) empty.style.display = visibleCount ? 'none' : 'block';
 }
 
 // ─── 客户详情 ───
@@ -163,7 +272,7 @@ async function loadCustomerDetail() {
     container.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h3 style="margin:0;font-size:18px;">${escapeHtml(customer.name || id)}</h3>
-        <button class="sm secondary" onclick="openTypeForm(${customer.id})">更新类型</button>
+        <button class="sm secondary" onclick="openTypeForm(${customer.id})">修改类型</button>
       </div>
       <div class="grid" style="margin-bottom:16px;">
         <div><strong>行业：</strong>${escapeHtml(customer.industry || '-')}</div>
@@ -195,9 +304,9 @@ async function createCustomer() {
     industry: document.getElementById('cust-industry').value.trim(),
     revenue_range: document.getElementById('cust-revenue').value.trim(),
     stage: document.getElementById('cust-stage').value.trim(),
-    region: document.getElementById('cust-region').value.trim(),
+    region: '',
   };
-  if (!payload.name) return showToast('请填写客户名称');
+  if (!payload.name) return showToast('请填写客户名称', 'error');
   setLoading('create-customer', true);
   try {
     await api('/api/v1/customers', { method: 'POST', body: JSON.stringify(payload) });
@@ -221,7 +330,7 @@ async function updateCustomerType(customerId) {
     type_confidence: parseFloat(document.getElementById('type-confidence').value || '0'),
     type_evidence: document.getElementById('type-evidence').value,
   };
-  if (!payload.primary_type) return showToast('请填写主类型');
+  if (!payload.primary_type) return showToast('请选择主类型', 'error');
   try {
     await api(`/api/v1/customers/${customerId}/type`, { method: 'PATCH', body: JSON.stringify(payload) });
     await loadCustomers();
@@ -245,7 +354,7 @@ async function renderBriefing(customerId) {
       <h3>${escapeHtml(payload.customer_name || customerId)}</h3>
       <p><strong>类型：</strong>${escapeHtml(payload.primary_type || '待判断')}${payload.secondary_type ? ' / ' + escapeHtml(payload.secondary_type) : ''} <span class="badge ${payload.confidence ? 'badge-green' : 'badge-gray'}">置信度 ${payload.confidence ?? '-'}</span></p>
       <p><strong>判断依据：</strong>${escapeHtml(payload.evidence || '-')}</p>
-      <p><strong>破冰话术：</strong>${escapeHtml(payload.opening_line || '-')} ${payload.opening_line ? `<button class="copy-btn" data-copy="${escapeHtml(payload.opening_line)}">复制</button>` : ''}</p>
+      <p><strong>破冰话术：</strong>${escapeHtml(payload.opening_line || '-')} ${payload.opening_line ? `<button class="copy-btn" data-copy="${escapeHtml(payload.opening_line)}">📋 复制</button>` : ''}</p>
       <p><strong>重点方向：</strong>${escapeHtml(payload.focus || '-')}</p>
       <p><strong>下一步：</strong>${escapeHtml(payload.next_step || '-')}</p>
       <p><strong>潜在异议：</strong>${escapeHtml((payload.potential_objections || []).join('；') || '-')}</p>
@@ -274,7 +383,7 @@ async function renderAssist(customerId) {
       <h3>会中辅助</h3>
       <p><strong>阶段：</strong>${escapeHtml(out.current_stage || '-')} → 检测到 <strong>${escapeHtml(out.detected_stage || '-')}</strong></p>
       <p><strong>阶段提示：</strong>${escapeHtml(out.stage_guidance || '-')}</p>
-      <p><strong>建议话术：</strong>${escapeHtml(out.suggested_response || '-')} ${out.suggested_response ? `<button class="copy-btn" data-copy="${escapeHtml(out.suggested_response)}">复制</button>` : ''}</p>
+      <p><strong>建议话术：</strong>${escapeHtml(out.suggested_response || '-')} ${out.suggested_response ? `<button class="copy-btn" data-copy="${escapeHtml(out.suggested_response)}">📋 复制</button>` : ''}</p>
       <p><strong>异议：</strong>${escapeHtml(out.objection_detected || '未识别')}</p>
       <p><strong>异议应答：</strong>${escapeHtml(out.objection_response || '-')}</p>
       <p><strong>备注：</strong>${escapeHtml((out.notes || []).join(' / ') || '-')}</p>
@@ -284,11 +393,15 @@ async function renderAssist(customerId) {
   container.style.display = 'block';
 }
 
+function getTagValues(group) {
+  return Array.from(selectedTags[group]).join('；');
+}
+
 async function renderFollowup(customerId) {
   const payload = {
     summary: document.getElementById('followup-summary').value,
-    decisions: (document.getElementById('followup-decisions').value || '').split(/；/).filter(Boolean),
-    pending_actions: (document.getElementById('followup-actions').value || '').split(/；/).filter(Boolean),
+    decisions: getTagValues('decisions') ? getTagValues('decisions').split(/；/) : [],
+    pending_actions: getTagValues('actions') ? getTagValues('actions').split(/；/) : [],
     transcript: document.getElementById('followup-transcript').value,
     customer_type: '',
   };
@@ -322,7 +435,6 @@ function renderMeetingResult(payload) {
     : '';
   if (payload.opening_line !== undefined || payload.suggested_response !== undefined) {
     const line = payload.opening_line || payload.suggested_response || '-';
-    const copyId = 'copy-' + Date.now();
     container.innerHTML = `
       <div class="result-block">
         <h3>${escapeHtml(type)}</h3>
@@ -330,7 +442,7 @@ function renderMeetingResult(payload) {
         ${payload.focus ? `<p><strong>重点方向：</strong>${escapeHtml(payload.focus)}</p>` : ''}
         ${payload.next_step ? `<p><strong>下一步：</strong>${escapeHtml(payload.next_step)}</p>` : ''}
         ${payload.potential_objections ? `<p><strong>潜在异议：</strong>${escapeHtml(Array.isArray(payload.potential_objections) ? payload.potential_objections.join('；') : String(payload.potential_objections))}</p>` : ''}
-        <p><strong>建议话术：</strong>${escapeHtml(line)} <button class="copy-btn" data-copy="${escapeHtml(line)}">复制</button></p>
+        <p><strong>建议话术：</strong>${escapeHtml(line)} <button class="copy-btn" data-copy="${escapeHtml(line)}">📋 复制</button></p>
         ${payload.llm_text ? `<p class="muted" style="font-size:12px; margin-top:8px;">LLM 输出：${escapeHtml(String(payload.llm_text).slice(0, 200))}</p>` : ''}
         ${sourceCards}
       </div>
@@ -346,7 +458,7 @@ document.addEventListener('click', (e) => {
   if (e.target.matches('[data-copy]')) {
     copyText(e.target.dataset.copy);
     e.target.textContent = '已复制';
-    setTimeout(() => { e.target.textContent = '复制'; }, 1500);
+    setTimeout(() => { e.target.textContent = '📋 复制'; }, 1500);
   }
 });
 
@@ -354,6 +466,7 @@ document.addEventListener('click', (e) => {
 
 function openBriefing(customerId) {
   document.getElementById('briefing-result').style.display = 'none';
+  document.getElementById('briefing-result').innerHTML = '<p class="muted"><span class="spinner" style="border-color:#6b7280;border-top-color:transparent;"></span> 正在生成会前简报...</p>';
   document.getElementById('briefing-modal').style.display = 'flex';
   renderBriefing(customerId);
 }
@@ -401,7 +514,7 @@ function viewCustomerDetail(customerId) {
 
 async function quickAnalyze() {
   const name = document.getElementById('analyze-name').value.trim();
-  if (!name) return showToast('请输入客户名称');
+  if (!name) return showToast('请输入客户名称', 'error');
   const industry = document.getElementById('analyze-industry').value.trim();
   const stage = document.getElementById('analyze-stage').value.trim();
   const container = document.getElementById('analyze-result');
@@ -416,14 +529,14 @@ async function quickAnalyze() {
     const sourceCards = sourceCardsHtml(b.llm_source_cards || []);
     container.innerHTML = `
       <div class="result-block">
-        <div style="margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
           ${out.is_new ? '<span class="badge badge-green">新客户</span>' : '<span class="badge badge-gray">已有客户</span>'}
-          <span style="font-weight:600; font-size:16px; margin-left:8px;">${escapeHtml(out.customer_name || name)}</span>
+          <span style="font-weight:600;font-size:16px;">${escapeHtml(out.customer_name || name)}</span>
         </div>
         <p><strong>类型：</strong>${escapeHtml(out.primary_type || '待判断')}${out.secondary_type ? ' / ' + escapeHtml(out.secondary_type) : ''}</p>
-        <p><strong>置信度：</strong>${escapeHtml(String(out.type_confidence ?? '-'))}</p>
+        <p><strong>置信度：</strong><span class="badge badge-green">${escapeHtml(String(out.type_confidence ?? '-'))}</span></p>
         <p><strong>判断依据：</strong>${escapeHtml(out.type_evidence || '-')}</p>
-        <p><strong>破冰话术：</strong>${escapeHtml(b.opening_line || '-')} ${b.opening_line ? `<button class="copy-btn" data-copy="${escapeHtml(b.opening_line)}">复制</button>` : ''}</p>
+        <p><strong>破冰话术：</strong>${escapeHtml(b.opening_line || '-')} ${b.opening_line ? `<button class="copy-btn" data-copy="${escapeHtml(b.opening_line)}">📋 复制</button>` : ''}</p>
         <p><strong>重点方向：</strong>${escapeHtml(b.focus || '-')}</p>
         <p><strong>下一步：</strong>${escapeHtml(b.next_step || '-')}</p>
         <p><strong>潜在异议：</strong>${escapeHtml((b.potential_objections || []).join('；') || '-')}</p>
@@ -440,6 +553,22 @@ async function quickAnalyze() {
   } finally {
     setLoading('quick-analyze-btn', false);
   }
+}
+
+function smartDetect() {
+  const name = document.getElementById('analyze-name').value.trim() || '飞鹤奶粉';
+  const options = getOptions();
+  const industrySelect = document.getElementById('analyze-industry');
+  const stageSelect = document.getElementById('analyze-stage');
+  if (industrySelect && options.industries && options.industries.includes('母婴')) {
+    industrySelect.value = '母婴';
+  }
+  if (stageSelect && options.stages && options.stages.includes('扩张期')) {
+    stageSelect.value = '扩张期';
+  }
+  const revenueSelect = document.getElementById('analyze-revenue');
+  if (revenueSelect) revenueSelect.value = '10亿以上';
+  showToast('✨ 已根据知识库预填客户信息', 'success');
 }
 
 // ─── 聊天 ───
@@ -595,7 +724,7 @@ async function createKnowledgeCase() {
     result: document.getElementById('case-result').value.trim(),
     source: document.getElementById('case-source').value.trim(),
   };
-  if (!payload.code || !payload.title) return showToast('请填写案例编码和标题');
+  if (!payload.code || !payload.title) return showToast('请填写案例编码和标题', 'error');
   try {
     await api('/api/v1/knowledge/cases', { method: 'POST', body: JSON.stringify(payload) });
     document.getElementById('knowledge-case-form').reset();
@@ -624,7 +753,7 @@ async function createKnowledgeScript() {
     template: document.getElementById('script-template').value.trim(),
     source: document.getElementById('script-source').value.trim(),
   };
-  if (!payload.type || !payload.template) return showToast('请填写客户类型和话术');
+  if (!payload.type || !payload.template) return showToast('请选择客户类型并填写话术', 'error');
   try {
     await api('/api/v1/knowledge/scripts', { method: 'POST', body: JSON.stringify(payload) });
     document.getElementById('knowledge-script-form').reset();
@@ -643,10 +772,14 @@ async function refreshDashboard() {
       api('/api/v1/knowledge/cases'),
       api('/api/v1/knowledge/scripts'),
     ]);
-    document.getElementById('kpi-customers').textContent = customerCache.length;
-    document.getElementById('kpi-briefing').textContent = customerCache.length;
-    document.getElementById('kpi-interactions').textContent = (interactions.data || []).length;
-    document.getElementById('kpi-followup').textContent = (briefings.data || []).length;
+    const kpiCustomers = document.getElementById('kpi-customers');
+    const kpiBriefing = document.getElementById('kpi-briefing');
+    const kpiInteractions = document.getElementById('kpi-interactions');
+    const kpiFollowup = document.getElementById('kpi-followup');
+    if (kpiCustomers) kpiCustomers.textContent = customerCache.length;
+    if (kpiBriefing) kpiBriefing.textContent = customerCache.length;
+    if (kpiInteractions) kpiInteractions.textContent = (interactions.data || []).length;
+    if (kpiFollowup) kpiFollowup.textContent = (briefings.data || []).length;
   } catch (e) {
     console.error(e);
   }
@@ -660,19 +793,301 @@ async function askAgent() {
   if (!text) return;
   appendChatBubble('user', text);
   input.value = '';
-  appendChatBubble('ai', '请使用"客户分析"功能或"AI 助手"页面获取专业建议。');
+  setTimeout(() => {
+    appendChatBubble('ai', `已收到你的问题：${text}。建议使用"客户分析"功能获取专业建议。`);
+  }, 300);
+}
+
+function quickAsk(text) {
+  document.getElementById('agent-input').value = text;
+  askAgent();
 }
 
 // ─── 辅助函数 ───
 
 async function populateCustomerSelects() {
-  const selects = ['chat-customer', 'meeting-customer'];
+  const selects = ['chat-customer', 'meeting-customer', 'followup-customer'];
   for (const id of selects) {
     const sel = document.getElementById(id);
     if (!sel) continue;
-    const options = customerCache.map(item => `<option value="${item.id}">${item.id} - ${escapeHtml(item.name || '未命名')}</option>`).join('');
-    sel.innerHTML = '<option value="">选择客户</option>' + options;
+    const options = customerCache.map(item => {
+      const type = item.primary_type ? `（${item.primary_type}）` : '';
+      return `<option value="${item.id}">${item.id} - ${escapeHtml(item.name || '未命名')} ${type}</option>`;
+    }).join('');
+    const base = '<option value="">选择客户</option>';
+    sel.innerHTML = base + options;
   }
+}
+
+function onMeetingCustomerChange() {
+  const sel = document.getElementById('meeting-customer');
+  const val = sel.value;
+  const customer = customerCache.find(c => String(c.id) === String(val));
+  if (customer) {
+    document.getElementById('meeting-type').value = customer.primary_type || '';
+    document.getElementById('meeting-industry').value = customer.industry || '';
+  } else {
+    document.getElementById('meeting-type').value = '';
+    document.getElementById('meeting-industry').value = '';
+  }
+}
+
+function clearMeetingResult() {
+  const container = document.getElementById('meeting-result');
+  if (container) {
+    container.innerHTML = '<span class="muted">请在左侧选择客户和动作。</span>';
+    container.style.display = 'block';
+  }
+}
+
+function importFromAssist() {
+  const transcript = document.getElementById('assist-transcript')?.value || '';
+  document.getElementById('followup-summary').value = transcript || '客户对品牌认知测试方案感兴趣，但关注投入产出比。';
+  showToast('📥 已从会中辅助导入会议摘要', 'success');
+}
+
+function toggleTag(el) {
+  const group = el.dataset.group;
+  const text = el.textContent.trim();
+  if (selectedTags[group].has(text)) {
+    selectedTags[group].delete(text);
+    el.classList.remove('selected');
+  } else {
+    selectedTags[group].add(text);
+    el.classList.add('selected');
+  }
+  updateSelectedSummary(group);
+}
+
+function updateSelectedSummary(group) {
+  const summary = document.getElementById(group + '-summary');
+  const selected = document.getElementById(group + '-selected');
+  const arr = Array.from(selectedTags[group]);
+  if (arr.length) {
+    summary.style.display = 'flex';
+    selected.textContent = arr.join('、');
+  } else {
+    summary.style.display = 'none';
+  }
+}
+
+function clearGroup(group) {
+  selectedTags[group].clear();
+  document.querySelectorAll(`[data-group="${group}"]`).forEach(el => el.classList.remove('selected'));
+  updateSelectedSummary(group);
+}
+
+function autoGenCode() {
+  const code = 'CASE_' + String(Date.now()).slice(-6);
+  const input = document.getElementById('case-code');
+  if (input) input.value = code;
+  showToast(`已生成编码：${code}`, 'success');
+}
+
+function skipLogin() {
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('workbench-page').style.display = 'block';
+  showPage('home-page');
+  showToast('欢迎预览原型！', 'success');
+}
+
+// ─── 数据看板 ───
+async function loadDashboard() {
+  try {
+    const data = await api('/api/v1/dashboard/stats');
+    const stats = data.data || {};
+
+    // 更新 KPI 卡片
+    document.getElementById('dash-customers').textContent = stats.total_customers || 0;
+    document.getElementById('dash-briefings').textContent = stats.total_briefings || 0;
+    document.getElementById('dash-interactions').textContent = stats.total_interactions || 0;
+    document.getElementById('dash-followups').textContent = stats.followups_with_summary || 0;
+
+    // 渲染类型分布饼图（简化版：条形图）
+    renderTypeChart(stats.type_distribution || []);
+
+    // 渲染趋势图
+    renderTrendChart(stats.briefing_trend || []);
+
+    // 渲染详细表格
+    renderTypeTable(stats.type_distribution || []);
+
+    // 显示内容，隐藏加载状态
+    document.getElementById('dashboard-loading').style.display = 'none';
+    document.getElementById('dashboard-content').style.display = 'block';
+  } catch (e) {
+    console.error('Dashboard load error:', e);
+    document.getElementById('dashboard-loading').innerHTML = `<p style="color:#dc2626;">加载失败：${e.message}</p>`;
+  }
+}
+
+function renderTypeChart(distribution) {
+  const container = document.getElementById('type-chart');
+  if (!container || !distribution.length) {
+    if (container) container.innerHTML = '<p class="muted">暂无数据</p>';
+    return;
+  }
+
+  const total = distribution.reduce((sum, item) => sum + item.count, 0);
+  const colors = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#4f46e5', '#0891b2', '#7c3aed'];
+
+  let html = '<div style="display:flex; flex-direction:column; gap:10px;">';
+  distribution.forEach((item, idx) => {
+    const pct = total > 0 ? Math.round(item.count / total * 100) : 0;
+    const color = colors[idx % colors.length];
+    html += `
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="width:100px; font-size:13px; color:#374151;">${escapeHtml(item.type)}</span>
+        <div style="flex:1; height:24px; background:#f3f4f6; border-radius:12px; overflow:hidden;">
+          <div style="height:100%; width:${pct}%; background:${color}; border-radius:12px; transition:width 0.5s;"></div>
+        </div>
+        <span style="width:60px; text-align:right; font-size:13px; font-weight:600;">${item.count}</span>
+        <span style="width:40px; text-align:right; font-size:12px; color:#6b7280;">${pct}%</span>
+      </div>
+    `;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function renderTrendChart(trend) {
+  const container = document.getElementById('trend-chart');
+  if (!container || !trend.length) {
+    if (container) container.innerHTML = '<p class="muted">暂无数据</p>';
+    return;
+  }
+
+  const maxCount = Math.max(...trend.map(t => t.count), 1);
+  const height = 150;
+  const barWidth = Math.min(40, Math.max(20, 300 / trend.length));
+
+  let html = '<div style="display:flex; align-items:flex-end; gap:8px; height:' + (height + 30) + 'px; padding-top:10px;">';
+  trend.forEach((item, idx) => {
+    const barHeight = (item.count / maxCount) * height;
+    html += `
+      <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
+        <span style="font-size:11px; color:#6b7280; margin-bottom:4px;">${item.count}</span>
+        <div style="width:${barWidth}px; height:${barHeight}px; background:#2563eb; border-radius:4px 4px 0 0;"></div>
+        <span style="font-size:11px; color:#6b7280; margin-top:4px; writing-mode:vertical-rl; text-orientation:mixed;">${item.date}</span>
+      </div>
+    `;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function renderTypeTable(distribution) {
+  const tbody = document.getElementById('type-table-body');
+  if (!tbody) return;
+
+  const total = distribution.reduce((sum, item) => sum + item.count, 0);
+  tbody.innerHTML = distribution.map(item => {
+    const pct = total > 0 ? Math.round(item.count / total * 100) : 0;
+    return `<tr>
+      <td>${escapeHtml(item.type)}</td>
+      <td>${item.count}</td>
+      <td>${pct}%</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── 语音转写 ───
+let recognition = null;
+let isRecording = false;
+
+function initVoiceRecognition() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    console.warn('浏览器不支持语音识别');
+    return null;
+  }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SpeechRecognition();
+  rec.lang = 'zh-CN';
+  rec.continuous = true;
+  rec.interimResults = true;
+
+  let finalTranscript = '';
+
+  rec.onstart = () => {
+    isRecording = true;
+    const btn = document.getElementById('voice-btn');
+    const status = document.getElementById('voice-status');
+    if (btn) {
+      btn.classList.add('voice-recording');
+      btn.textContent = '⏹ 停止';
+    }
+    if (status) status.textContent = '🔴 正在录音...';
+  };
+
+  rec.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript;
+      } else {
+        interim += transcript;
+      }
+    }
+    const textarea = document.getElementById('assist-transcript');
+    if (textarea) {
+      textarea.value = finalTranscript + interim;
+    }
+  };
+
+  rec.onerror = (event) => {
+    console.error('语音识别错误:', event.error);
+    stopVoiceRecognition();
+    if (event.error === 'not-allowed') {
+      showToast('请允许麦克风权限', 'error');
+    } else if (event.error !== 'aborted') {
+      showToast(`语音识别错误: ${event.error}`, 'error');
+    }
+  };
+
+  rec.onend = () => {
+    if (isRecording) {
+      // 意外结束，重新启动
+      try { rec.start(); } catch (e) {}
+    }
+  };
+
+  return rec;
+}
+
+function toggleVoiceRecognition() {
+  if (!recognition) {
+    recognition = initVoiceRecognition();
+    if (!recognition) {
+      showToast('您的浏览器不支持语音识别，请使用 Chrome 或 Edge', 'error');
+      return;
+    }
+  }
+
+  if (isRecording) {
+    stopVoiceRecognition();
+  } else {
+    try {
+      recognition.start();
+      showToast('已开始语音识别，请说话...', 'info');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
+function stopVoiceRecognition() {
+  isRecording = false;
+  if (recognition) {
+    try { recognition.stop(); } catch (e) {}
+  }
+  const btn = document.getElementById('voice-btn');
+  const status = document.getElementById('voice-status');
+  if (btn) {
+    btn.classList.remove('voice-recording');
+    btn.textContent = '🎤 语音输入';
+  }
+  if (status) status.textContent = '';
 }
 
 // ─── 初始化 ───
@@ -687,6 +1102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       showPage('workbench-page');
       applyRoleVisibility();
+      await loadOptions();
       await loadCustomers();
       await populateCustomerSelects();
       loadKnowledgeCases();
@@ -711,14 +1127,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem('access_token', authToken);
       showPage('workbench-page');
       await refreshUserAndVisibility();
+      await loadOptions();
       await loadCustomers();
       await populateCustomerSelects();
       loadKnowledgeCases();
       loadKnowledgeScripts();
       refreshDashboard();
       await loadChatSessions();
+      showToast('登录成功，欢迎回来！', 'success');
     } catch (err) {
-      showToast(err.message || '登录失败');
+      showToast(err.message || '登录失败', 'error');
     }
   });
 
@@ -775,7 +1193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('briefing-action')?.addEventListener('click', async () => {
     const customerId = Number(document.getElementById('meeting-customer').value);
-    if (!customerId) return showToast('请选择客户');
+    if (!customerId) return showToast('请选择客户', 'error');
     setLoading('briefing-action', true);
     try {
       const result = await api(`/api/v1/customers/${customerId}/briefing`, { method: 'POST' });
@@ -789,13 +1207,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('assist-action')?.addEventListener('click', async () => {
     const customerId = Number(document.getElementById('meeting-customer').value);
-    if (!customerId) return showToast('请选择客户');
+    if (!customerId) return showToast('请选择客户', 'error');
     setLoading('assist-action', true);
     try {
       const payload = {
         current_stage: document.getElementById('meeting-stage').value,
         transcript: document.getElementById('meeting-transcript').value,
-        customer_type: '',
+        customer_type: document.getElementById('meeting-type').value,
       };
       const result = await api(`/api/v1/customers/${customerId}/assist`, { method: 'POST', body: JSON.stringify(payload) });
       await renderMeetingResult(result.data);
@@ -808,15 +1226,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('followup-action')?.addEventListener('click', async () => {
     const customerId = Number(document.getElementById('meeting-customer').value);
-    if (!customerId) return showToast('请选择客户');
+    if (!customerId) return showToast('请选择客户', 'error');
     setLoading('followup-action', true);
     try {
       const payload = {
         summary: document.getElementById('meeting-transcript').value,
-        decisions: (document.getElementById('meeting-decisions').value || '').split(/；/).filter(Boolean),
-        pending_actions: (document.getElementById('meeting-actions').value || '').split(/；/).filter(Boolean),
+        decisions: getTagValues('decisions') ? getTagValues('decisions').split(/；/) : [],
+        pending_actions: getTagValues('actions') ? getTagValues('actions').split(/；/) : [],
         transcript: document.getElementById('followup-transcript').value,
-        customer_type: document.getElementById('followup-type')?.value || '',
+        customer_type: document.getElementById('meeting-type')?.value || '',
       };
       const result = await api(`/api/v1/customers/${customerId}/followup`, { method: 'POST', body: JSON.stringify(payload) });
       await renderMeetingResult(result.data);
@@ -826,4 +1244,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       setLoading('followup-action', false);
     }
   });
+
+  document.getElementById('meeting-customer')?.addEventListener('change', onMeetingCustomerChange);
 });

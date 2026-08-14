@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import distinct
 from app.core.domain.services.knowledge_service import list_customer_types, list_cases, list_scripts, list_evidence, create_case, create_script
 from app.schemas.knowledge_admin import CaseIn, ScriptIn
 from app.core.deps import get_db, get_current_user, require_admin
+from app.models.knowledge import Case, Script
 
 router = APIRouter()
 
@@ -25,6 +27,26 @@ def get_scripts(db: Session = Depends(get_db), user: dict = Depends(get_current_
 @router.get("/evidence")
 def get_evidence(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return {"code": 0, "message": "ok", "data": [item.__dict__ for item in list_evidence(db)]}
+
+
+@router.get("/options")
+def get_options(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    industries = [row[0] for row in db.query(distinct(Case.industry)).filter(Case.industry.isnot(None), Case.industry != "").order_by(Case.industry.asc()).all() if row[0]]
+    stages = [row[0] for row in db.query(distinct(Case.stage)).filter(Case.stage.isnot(None), Case.stage != "").order_by(Case.stage.asc()).all() if row[0]]
+    scenes = [row[0] for row in db.query(distinct(Script.scene)).filter(Script.scene.isnot(None), Script.scene != "").order_by(Script.scene.asc()).all() if row[0]]
+    customer_types = [{"code": t.code, "name": t.name} for t in list_customer_types(db)]
+    return {
+        "code": 0,
+        "message": "ok",
+        "data": {
+            "industries": industries,
+            "stages": stages,
+            "customer_types": customer_types,
+            "scenes": scenes,
+            "decisions": ["确定合作", "暂缓", "需再评估", "指定负责人", "明确预算"],
+            "actions": ["发方案", "约下次会议", "内部评审", "报价", "寄样品"],
+        },
+    }
 
 
 @router.post("/cases")

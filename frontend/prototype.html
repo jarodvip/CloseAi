@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>客户攻单AI - 交互优化原型 v2</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --sidebar-bg: #0f172a;
+    --sidebar-fg: #e2e8f0;
+    --sidebar-active: #1e293b;
+    --card: #fff;
+    --border: #e5e7eb;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --primary-light: #eff6ff;
+    --muted: #6b7280;
+    --success: #16a34a;
+    --danger: #dc2626;
+    --indigo-50: #eef2ff;
+    --indigo-100: #e0e7ff;
+    --indigo-600: #4f46e5;
+    --amber-50: #fffbeb;
+    --amber-100: #fef3c7;
+    --amber-600: #d97706;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: #111827; line-height: 1.5;
+  }
+  .page { display: none; }
+  .page.active { display: block; }
+  .card {
+    background: var(--card); border-radius: 12px; padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px;
+  }
+  input, select, textarea {
+    width: 100%; padding: 10px 12px; margin: 6px 0 12px;
+    border: 1px solid var(--border); border-radius: 10px; font-size: 14px;
+    box-sizing: border-box; background: #fff; transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+  }
+  textarea { resize: vertical; }
+  button {
+    padding: 10px 14px; border: 0; border-radius: 10px; background: var(--primary);
+    color: #fff; cursor: pointer; font-size: 14px; font-weight: 500;
+    transition: background 0.15s, transform 0.05s;
+  }
+  button:hover { background: var(--primary-hover); }
+  button:active { transform: scale(0.98); }
+  button:disabled { background: #93c5fd; cursor: not-allowed; transform: none; }
+  button.secondary { background: #e5e7eb; color: #111827; }
+  button.secondary:hover { background: #d1d5db; }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  button.ghost:hover { background: #f3f4f6; color: #374151; }
+  button.sm { padding: 6px 10px; font-size: 13px; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 230px;
+    background: var(--sidebar-bg); color: var(--sidebar-fg); padding: 18px;
+    transition: transform 0.2s; z-index: 50;
+  }
+  .sidebar .brand { font-size: 18px; font-weight: 600; margin-bottom: 22px; display: flex; align-items: center; gap: 8px; }
+  .sidebar button {
+    width: 100%; text-align: left; margin: 4px 0; background: transparent; color: var(--sidebar-fg);
+    border-radius: 8px; padding: 8px 12px;
+  }
+  .sidebar button:hover { background: rgba(255,255,255,0.06); }
+  .sidebar button.active { background: var(--sidebar-active); color: #fff; font-weight: 500; }
+  .main { margin-left: 250px; padding: 18px; transition: margin-left 0.2s; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .badge {
+    display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .badge-green { background: #dcfce7; color: #166534; }
+  .badge-gray { background: #f3f4f6; color: #6b7280; }
+  .badge-indigo { background: var(--indigo-100); color: var(--indigo-600); }
+  .badge-amber { background: var(--amber-100); color: var(--amber-600); }
+  .muted { color: var(--muted); }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; border: 2px solid var(--muted);
+    border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tag {
+    display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+    border-radius: 999px; background: var(--indigo-50); color: var(--indigo-600);
+    font-size: 13px; cursor: pointer; border: 1px solid transparent; user-select: none;
+    transition: all 0.15s;
+  }
+  .tag.selected { background: var(--indigo-100); border-color: var(--indigo-600); }
+  .tag:hover { border-color: var(--indigo-600); }
+  .tag .remove { font-weight: 700; line-height: 1; margin-left: 2px; }
+  .source-card {
+    background: var(--indigo-50); border: 1px solid #e4e8ff; border-radius: 10px; padding: 10px; margin-top: 8px;
+  }
+  .source-card-title { font-weight: 600; color: #1f2937; margin-bottom: 6px; font-size: 14px; }
+  .result-block {
+    background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .result-block h3 { margin: 0 0 8px; font-size: 16px; }
+  .result-block p { margin: 6px 0; font-size: 14px; line-height: 1.6; }
+  .copy-btn {
+    font-size: 12px; padding: 3px 8px; background: #e5e7eb; color: #374151;
+    border-radius: 6px; cursor: pointer; border: 0; margin-left: 6px;
+  }
+  .copy-btn:hover { background: #d1d5db; }
+  .kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .kpi .value { font-size: 22px; font-weight: 700; }
+  .kpi .label { color: var(--muted); font-size: 13px; }
+  .quick-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .quick-bar button { font-size: 13px; padding: 6px 10px; }
+  .section-title { font-size: 16px; font-weight: 600; margin: 16px 0 8px; }
+  .empty-state {
+    text-align: center; padding: 32px 16px; color: var(--muted);
+  }
+  .empty-state svg {
+    width: 48px; height: 48px; margin-bottom: 8px; opacity: 0.4;
+  }
+  .hamburger {
+    display: none; position: fixed; top: 12px; left: 12px; z-index: 60;
+    width: 40px; height: 40px; border-radius: 8px; background: var(--sidebar-bg);
+    color: #fff; border: 0; cursor: pointer; font-size: 20px;
+  }
+  .overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 40;
+  }
+  .search-box {
+    position: relative;
+  }
+  .search-box input {
+    padding-left: 36px; margin: 0 0 12px;
+  }
+  .search-box::before {
+    content: "🔍"; position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    font-size: 14px; opacity: 0.5;
+  }
+  .filter-bar {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;
+  }
+  .filter-bar select {
+    width: auto; min-width: 120px; margin: 0; padding: 6px 10px; font-size: 13px;
+  }
+  .selected-summary {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 8px 12px; background: var(--indigo-50); border-radius: 8px;
+    margin-bottom: 12px; font-size: 13px;
+  }
+  .selected-summary .label { color: var(--muted); }
+  .selected-summary .clear {
+    margin-left: auto; color: var(--danger); cursor: pointer; font-size: 12px;
+  }
+  .chat-context {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: #f8fafc; border-radius: 8px; margin-bottom: 8px; font-size: 13px;
+  }
+  .chat-context .customer-name { font-weight: 600; }
+  .toast-container {
+    position: fixed; top: 20px; right: 20px; z-index: 200;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .toast {
+    padding: 10px 16px; border-radius: 10px; color: #fff; font-size: 14px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1); animation: toastIn 0.2s ease-out;
+    max-width: 360px;
+  }
+  .toast.success { background: var(--success); }
+  .toast.error { background: var(--danger); }
+  .toast.info { background: var(--primary); }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-group-vertical { display: flex; flex-direction: column; gap: 6px; }
+  .sticky-header {
+    position: sticky; top: 0; background: rgba(255,255,255,0.9); backdrop-filter: blur(8px);
+    z-index: 10; padding: 8px 0; margin-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  @media (max-width: 860px) {
+    .sidebar { transform: translateX(-100%); }
+    .sidebar.open { transform: translateX(0); }
+    .main { margin-left: 0; }
+    .split { grid-template-columns: 1fr; }
+    .kpi { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: 1fr; }
+    .hamburger { display: block; }
+    .overlay.show { display: block; }
+  }
+</style>
+</head>
+<body>
+  <!-- 移动端汉堡菜单 -->
+  <button class="hamburger" onclick="toggleSidebar()">☰</button>
+  <div class="overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+  <!-- Toast 容器 -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- 登录页 -->
+  <div id="login-page" class="page active" style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
+    <div class="card" style="max-width:420px;width:92vw;">
+      <h2 style="margin:0 0 8px;font-size:18px;">登录客户攻单AI</h2>
+      <input id="login-username" placeholder="用户名" value="admin" />
+      <input id="login-password" placeholder="密码" type="password" value="admin123" />
+      <button onclick="doLogin()" style="width:100%;margin-top:4px;">登录</button>
+      <p class="muted" style="font-size:13px;margin-top:8px;">测试账号：admin / admin123 或 sales / sales123</p>
+      <button class="secondary" onclick="skipLogin()" style="width:100%;margin-top:8px;">跳过登录，直接预览原型</button>
+    </div>
+  </div>
+
+  <!-- 工作台 -->
+  <div id="workbench-page" class="page">
+    <div class="sidebar" id="sidebar">
+      <div class="brand">📊 客户攻单AI</div>
+      <button onclick="showPage('home-page')" class="nav-btn active" data-page="home-page">🏠 工作台</button>
+      <button onclick="showPage('chat-page')" class="nav-btn" data-page="chat-page">💬 AI 助手</button>
+      <button onclick="showPage('customers-page')" class="nav-btn" data-page="customers-page">👥 客户画像</button>
+      <button onclick="showPage('meeting-page')" class="nav-btn" data-page="meeting-page">📅 会前 / 会中 / 会后</button>
+      <button onclick="showPage('knowledge-page')" class="nav-btn" data-page="knowledge-page" data-admin-only>📚 知识库后台</button>
+      <button onclick="logout()" style="margin-top:18px;">🚪 退出</button>
+    </div>
+    <div class="main">
+      <!-- 工作台首页 -->
+      <div id="home-page" class="page active">
+        <div class="card">
+          <h2 style="margin:0 0 10px;font-size:18px;">🎯 客户分析</h2>
+          <div class="grid">
+            <div>
+              <label class="muted" style="font-size:13px;">客户名称</label>
+              <input id="analyze-name" placeholder="输入或选择客户" list="analyze-customer-list" />
+              <datalist id="analyze-customer-list">
+                <option value="飞鹤奶粉"></option>
+                <option value="元气森林"></option>
+                <option value="波司登"></option>
+                <option value="老乡鸡"></option>
+              </datalist>
+            </div>
+            <div>
+              <label class="muted" style="font-size:13px;">行业</label>
+              <select id="analyze-industry">
+                <option value="">请选择</option>
+                <option>母婴</option><option>食品</option><option>饮料</option>
+                <option>美妆家电</option><option>新消费</option><option>餐饮</option>
+                <option>服饰</option><option>其他</option>
+              </select>
+            </div>
+            <div>
+              <label class="muted" style="font-size:13px;">发展阶段</label>
+              <select id="analyze-stage">
+                <option value="">请选择</option>
+                <option>初创期</option><option>成长期</option>
+                <option>扩张期</option><option>成熟期</option><option>转型期</option>
+              </select>
+            </div>
+            <div>
+              <label class="muted" style="font-size:13px;">营收区间</label>
+              <select id="analyze-revenue">
+                <option value="">请选择</option>
+                <option>5000万以下</option><option>5000万-2亿</option>
+                <option>2亿-10亿</option><option>10亿以上</option>
+              </select>
+            </div>
+          </div>
+          <div class="btn-group" style="margin-top:8px;">
+            <button id="quick-analyze-btn" onclick="quickAnalyze()">🚀 一键分析并生成简报</button>
+            <button class="secondary" onclick="smartDetect()">✨ 智能识别（基于知识库预填）</button>
+          </div>
+          <div id="analyze-result" style="display:none;margin-top:12px;"></div>
+        </div>
+
+        <div class="kpi" style="margin-bottom:16px;">
+          <div class="card" style="cursor:pointer;" onclick="showPage('customers-page')">
+            <div class="value" style="color:var(--primary);">12</div>
+            <div class="label">客户数</div>
+          </div>
+          <div class="card">
+            <div class="value" style="color:var(--success);">38</div>
+            <div class="label">互动记录</div>
+          </div>
+          <div class="card" style="cursor:pointer;" onclick="showPage('meeting-page')">
+            <div class="value" style="color:var(--amber-600);">24</div>
+            <div class="label">简报生成</div>
+          </div>
+          <div class="card">
+            <div class="value" style="color:var(--indigo-600);">16</div>
+            <div class="label">跟进任务</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 style="margin:0 0 10px;font-size:18px;">🤖 快速助手</h2>
+          <div class="agent-chat" style="border:1px solid var(--border);border-radius:12px;padding:12px;background:#f8fafc;min-height:220px;display:flex;flex-direction:column;">
+            <div id="agent-messages" style="flex:1;overflow-y:auto;"></div>
+            <div class="agent-input" style="display:flex;gap:8px;margin-top:10px;">
+              <input id="agent-input" placeholder="输入你的销售问题..." style="flex:1;" />
+              <button id="agent-send" onclick="askAgent()">发送</button>
+            </div>
+            <div class="quick-bar">
+              <button class="secondary" onclick="quickAsk('生成会前简报')">生成会前简报</button>
+              <button class="secondary" onclick="quickAsk('分析客户类型')">分析客户类型</button>
+              <button class="secondary" onclick="quickAsk('提取待办事项')">提取待办事项</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 客户画像 -->
+      <div id="customers-page" class="page">
+        <div class="card">
+          <h2 style="margin:0 0 10px;font-size:18px;">✨ 新建客户</h2>
+          <form id="customer-form" onsubmit="return false;">
+            <div class="grid">
+              <div>
+                <label class="muted" style="font-size:13px;">客户名称 *</label>
+                <input id="cust-name" placeholder="客户名称" required />
+              </div>
+              <div>
+                <label class="muted" style="font-size:13px;">行业</label>
+                <select id="cust-industry">
+                  <option value="">请选择行业</option>
+                  <option>母婴</option><option>食品</option><option>饮料</option>
+                  <option>美妆家电</option><option>新消费</option><option>餐饮</option>
+                  <option>服饰</option><option>其他</option>
+                </select>
+              </div>
+              <div>
+                <label class="muted" style="font-size:13px;">发展阶段</label>
+                <select id="cust-stage">
+                  <option value="">请选择阶段</option>
+                  <option>初创期</option><option>成长期</option>
+                  <option>扩张期</option><option>成熟期</option><option>转型期</option>
+                </select>
+              </div>
+              <div>
+                <label class="muted" style="font-size:13px;">营收区间</label>
+                <select id="cust-revenue">
+                  <option value="">请选择营收区间</option>
+                  <option>5000万以下</option><option>5000万-2亿</option>
+                  <option>2亿-10亿</option><option>10亿以上</option>
+                </select>
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top:4px;">
+              <button id="create-customer" onclick="createCustomer()">创建客户</button>
+              <button class="secondary" onclick="smartDetect()">✨ 智能识别并预填</button>
+            </div>
+          </form>
+        </div>
+        <div class="card">
+          <div class="sticky-header">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <h2 style="margin:0;font-size:18px;">客户画像</h2>
+              <div class="search-box">
+                <input id="customer-search" placeholder="搜索客户..." style="width:200px;margin:0;" oninput="filterCustomers()" />
+              </div>
+            </div>
+            <div class="filter-bar">
+              <select id="filter-type" onchange="filterCustomers()">
+                <option value="">全部类型</option>
+                <option>品牌野心型</option><option>定位卡位型</option>
+                <option>品类开创者型</option><option>竞争突围型</option>
+                <option>资本叙事型</option><option>全国化扩张型</option><option>品牌焕新型</option>
+              </select>
+              <select id="filter-stage" onchange="filterCustomers()">
+                <option value="">全部阶段</option>
+                <option>初创期</option><option>成长期</option><option>扩张期</option><option>成熟期</option><option>转型期</option>
+              </select>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead>
+                <tr><th>ID</th><th>名称</th><th>行业</th><th>阶段</th><th>主类型</th><th>操作</th></tr>
+              </thead>
+              <tbody id="customer-table-body">
+                <tr data-name="飞鹤奶粉" data-type="品牌野心型" data-stage="扩张期">
+                  <td>1</td><td>飞鹤奶粉</td><td>母婴</td><td>扩张期</td>
+                  <td><span class="badge badge-indigo">品牌野心型</span></td>
+                  <td>
+                    <span class="button-stack" style="display:flex;gap:6px;flex-wrap:wrap;">
+                      <button class="sm secondary" onclick="viewCustomerDetail(1)">详情</button>
+                      <button class="sm" onclick="openBriefing(1)">简报</button>
+                      <button class="sm" onclick="openAssist(1)">会中</button>
+                      <button class="sm" onclick="openFollowup(1)">跟进</button>
+                    </span>
+                  </td>
+                </tr>
+                <tr data-name="元气森林" data-type="品类开创者型" data-stage="成长期">
+                  <td>2</td><td>元气森林</td><td>饮料</td><td>成长期</td>
+                  <td><span class="badge badge-indigo">品类开创者型</span></td>
+                  <td>
+                    <span class="button-stack" style="display:flex;gap:6px;flex-wrap:wrap;">
+                      <button class="sm secondary" onclick="viewCustomerDetail(2)">详情</button>
+                      <button class="sm" onclick="openBriefing(2)">简报</button>
+                      <button class="sm" onclick="openAssist(2)">会中</button>
+                      <button class="sm" onclick="openFollowup(2)">跟进</button>
+                    </span>
+                  </td>
+                </tr>
+                <tr data-name="波司登" data-type="品牌焕新型" data-stage="成熟期">
+                  <td>3</td><td>波司登</td><td>服饰</td><td>成熟期</td>
+                  <td><span class="badge badge-indigo">品牌焕新型</span></td>
+                  <td>
+                    <span class="button-stack" style="display:flex;gap:6px;flex-wrap:wrap;">
+                      <button class="sm secondary" onclick="viewCustomerDetail(3)">详情</button>
+                      <button class="sm" onclick="openBriefing(3)">简报</button>
+                      <button class="sm" onclick="openAssist(3)">会中</button>
+                      <button class="sm" onclick="openFollowup(3)">跟进</button>
+                    </span>
+                  </td>
+                </tr>
+                <tr data-name="老乡鸡" data-type="全国化扩张型" data-stage="扩张期">
+                  <td>4</td><td>老乡鸡</td><td>餐饮</td><td>扩张期</td>
+                  <td><span class="badge badge-indigo">全国化扩张型</span></td>
+                  <td>
+                    <span class="button-stack" style="display:flex;gap:6px;flex-wrap:wrap;">
+                      <button class="sm secondary" onclick="viewCustomerDetail(4)">详情</button>
+                      <button class="sm" onclick="openBriefing(4)">简报</button>
+                      <button class="sm" onclick="openAssist(4)">会中</button>
+                      <button class="sm" onclick="openFollowup(4)">跟进</button>
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div id="customer-empty" class="empty-state" style="display:none;">
+              <div>📭</div>
+              <div>没有找到匹配的客户</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 客户详情 -->
+      <div id="customer-detail-page" class="page">
+        <div class="card">
+          <div class="row" style="margin-bottom:10px;">
+            <h2 style="margin:0;font-size:18px;">客户详情</h2>
+            <button class="secondary sm" onclick="showPage('customers-page')">← 返回列表</button>
+          </div>
+          <div id="customer-detail">
+            <div class="grid" style="margin-bottom:16px;">
+              <div><strong>名称：</strong>飞鹤奶粉</div>
+              <div><strong>行业：</strong>母婴</div>
+              <div><strong>阶段：</strong>扩张期</div>
+              <div><strong>区域：</strong>全国</div>
+              <div>
+                <strong>主类型：</strong>
+                <span class="badge badge-indigo">品牌野心型</span>
+                <button class="sm secondary" style="margin-left:8px;" onclick="openTypeForm(1)">修改</button>
+              </div>
+              <div><strong>次类型：</strong>全国化扩张型</div>
+            </div>
+            <div class="card" style="background:#f8fafc;border:1px dashed var(--border);">
+              <h3 style="margin:0 0 8px;font-size:16px;">⚡ 快捷操作</h3>
+              <div class="btn-group">
+                <button onclick="openBriefing(1)">📄 生成会前简报</button>
+                <button onclick="openAssist(1)">🎯 会中辅助</button>
+                <button onclick="openFollowup(1)">📬 会后跟进</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 会前/会中/会后 -->
+      <div id="meeting-page" class="page">
+        <div class="split">
+          <div class="card">
+            <h2 style="margin:0 0 10px;font-size:18px;">📅 会前 / 会中 / 会后</h2>
+            <form id="meeting-form" onsubmit="return false;">
+              <label class="muted" style="font-size:13px;">选择客户</label>
+              <select id="meeting-customer" onchange="onMeetingCustomerChange()">
+                <option value="">请选择客户</option>
+                <option value="1">飞鹤奶粉（品牌野心型）</option>
+                <option value="2">元气森林（品类开创者型）</option>
+                <option value="3">波司登（品牌焕新型）</option>
+                <option value="4">老乡鸡（全国化扩张型）</option>
+              </select>
+
+              <label class="muted" style="font-size:13px;">当前阶段</label>
+              <select id="meeting-stage">
+                <option value="听">听</option>
+                <option value="认">认</option>
+                <option value="比">比</option>
+                <option value="算">算</option>
+                <option value="定">定</option>
+              </select>
+
+              <label class="muted" style="font-size:13px;">客户类型</label>
+              <input id="meeting-type" value="品牌野心型" readonly style="background:#f3f4f6;color:#6b7280;" />
+
+              <label class="muted" style="font-size:13px;">行业（自动带入）</label>
+              <input id="meeting-industry" value="母婴" readonly style="background:#f3f4f6;color:#6b7280;" />
+
+              <label class="muted" style="font-size:13px;">客户表达 / 会议摘要</label>
+              <textarea id="meeting-transcript" rows="3" placeholder="客户表达或会议摘要"></textarea>
+
+              <div class="btn-group" style="margin-top:8px;">
+                <button id="briefing-action" type="button" onclick="doBriefing()">📄 会前简报</button>
+                <button id="assist-action" type="button" onclick="doAssist()">🎯 会中辅助</button>
+                <button id="followup-action" type="button" onclick="doFollowup()">📬 会后跟进</button>
+              </div>
+            </form>
+          </div>
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <h2 style="margin:0;font-size:18px;">生成结果</h2>
+              <button class="ghost sm" onclick="clearMeetingResult()">清空</button>
+            </div>
+            <div id="meeting-result" class="muted">请在左侧选择客户和动作。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI 助手 -->
+      <div id="chat-page" class="page">
+        <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;">
+          <div class="card" style="padding:12px;">
+            <h3 style="margin:0 0 8px;font-size:16px;">会话列表</h3>
+            <input id="chat-new-title" placeholder="可选：新会话标题" />
+            <button id="chat-new-session" class="sm" style="width:100%;margin:4px 0;">+ 新建会话</button>
+            <select id="chat-customer" style="margin:8px 0;">
+              <option value="">选择客户</option>
+              <option value="1">飞鹤奶粉</option>
+              <option value="2">元气森林</option>
+            </select>
+            <div id="active-session-title" class="muted" style="font-size:13px;">当前会话：未选择</div>
+            <ul id="chat-session-list" style="padding-left:6px;margin-top:8px;list-style:none;">
+              <li style="margin-bottom:6px;">
+                <button class="sm" style="width:auto;margin:0;padding:4px 8px;font-size:13px;">飞鹤奶粉 - 会前准备</button>
+              </li>
+            </ul>
+          </div>
+          <div class="agent-chat">
+            <div id="chat-messages" style="flex:1;overflow-y:auto;"></div>
+            <div class="agent-input" style="display:flex;gap:8px;margin-top:10px;">
+              <input id="chat-input" placeholder="输入你的销售问题..." style="flex:1;" />
+              <button id="chat-send" onclick="sendChatMessage()">发送</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 知识库后台 -->
+      <div id="knowledge-page" class="page">
+        <div class="card">
+          <h2 style="margin:0 0 10px;font-size:18px;">✨ 新增案例</h2>
+          <form id="knowledge-case-form" onsubmit="return false;">
+            <div class="grid">
+              <div>
+                <label class="muted" style="font-size:13px;">案例编码</label>
+                <div style="display:flex;gap:8px;">
+                  <input id="case-code" placeholder="自动生成或手动输入" />
+                  <button class="secondary" type="button" onclick="autoGenCode()">自动生成</button>
+                </div>
+              </div>
+              <div>
+                <label class="muted" style="font-size:13px;">案例标题 *</label>
+                <input id="case-title" placeholder="案例标题" required />
+              </div>
+              <div>
+                <label class="muted" style="font-size:13px;">客户类型</label>
+                <select id="case-type">
+                  <option value="">请选择类型</option>
+                  <option>品牌野心型</option><option>定位卡位型</option>
+                  <option>品类开创者型</option><option>竞争突围型</option>
+                  <option>资本叙事型</option><option>全国化扩张型</option><option>品牌焕新型</option>
+                </select>
+              </div>
+              <div>
+                <label class="muted" style="font-size:13px;">行业</label>
+                <select id="case-industry">
+                  <option value="">请选择行业</option>
+                  <option>母婴</option><option>食品</option><option>饮料</option>
+                  <option>美妆家电</option><option>新消费</option><option>餐饮</option>
+                  <option>服饰</option><option>其他</option>
+                </select>
+              </div>
+              <div>
+                <label class="muted" style="font-size:13px;">阶段</label>
+                <select id="case-stage">
+                  <option value="">请选择阶段</option>
+                  <option>初创期</option><option>成长期</option>
+                  <option>扩张期</option><option>成熟期</option><option>转型期</option>
+                </select>
+              </div>
+              <div>
+                <label class="muted" style="font-size:13px;">来源</label>
+                <input id="case-source" placeholder="案例来源" />
+              </div>
+            </div>
+            <label class="muted" style="font-size:13px;">结果摘要</label>
+            <textarea id="case-result" rows="3" placeholder="案例结果"></textarea>
+            <button id="create-knowledge-case" onclick="showToast('原型仅展示交互，不实际提交')">保存案例</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2 style="margin:0 0 10px;font-size:18px;">案例列表</h2>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;margin-top:10px;">
+              <thead><tr><th>编码</th><th>标题</th><th>类型</th><th>行业</th><th>阶段</th><th>结果</th></tr></thead>
+              <tbody>
+                <tr><td>CASE_001</td><td>飞鹤奶粉品牌资产建设</td><td>品牌野心型</td><td>母婴</td><td>扩张期</td><td>认知度提升35%</td></tr>
+                <tr><td>CASE_002</td><td>妙可蓝多心智卡位</td><td>定位卡位型</td><td>食品</td><td>成长期</td><td>市场份额提升12%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h2 style="margin:0 0 10px;font-size:18px;">新增话术</h2>
+          <form id="knowledge-script-form" onsubmit="return false;">
+            <div class="grid">
+              <div>
+                <label class="muted" style="font-size:13px;">场景</label>
+                <select id="script-scene">
+                  <option value="">请选择场景</option>
+                  <option>破冰</option><option>异议应答</option>
+                  <option>逼单</option><option>售后</option><option>转介绍</option>
+                </select>
+              </div>
+              <div>
+                <label class="muted" style="font-size:13px;">客户类型</label>
+                <select id="script-type">
+                  <option value="">请选择类型</option>
+                  <option>品牌野心型</option><option>定位卡位型</option>
+                  <option>品类开创者型</option><option>竞争突围型</option>
+                  <option>资本叙事型</option><option>全国化扩张型</option><option>品牌焕新型</option>
+                </select>
+              </div>
+            </div>
+            <label class="muted" style="font-size:13px;">话术内容</label>
+            <textarea id="script-template" rows="3" placeholder="话术内容"></textarea>
+            <button onclick="showToast('原型仅展示交互，不实际提交')">保存话术</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 会前简报弹窗 -->
+  <div id="briefing-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.35);align-items:center;justify-content:center;z-index:100;">
+    <div class="modal-content" style="background:#fff;width:min(720px,92vw);max-height:88vh;overflow:auto;border-radius:14px;padding:18px;">
+      <div class="row" style="margin-bottom:10px;">
+        <h3 style="margin:0;font-size:18px;">📄 会前简报</h3>
+        <div class="btn-group">
+          <button class="secondary" onclick="closeModal('briefing-modal')">关闭</button>
+        </div>
+      </div>
+      <div id="briefing-result"></div>
+    </div>
+  </div>
+
+  <!-- 会中辅助弹窗 -->
+  <div id="assist-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.35);align-items:center;justify-content:center;z-index:100;">
+    <div class="modal-content" style="background:#fff;width:min(720px,92vw);max-height:88vh;overflow:auto;border-radius:14px;padding:18px;">
+      <div class="row" style="margin-bottom:10px;">
+        <h3 style="margin:0;font-size:18px;">🎯 会中辅助</h3>
+        <div class="btn-group">
+          <button class="secondary" onclick="closeModal('assist-modal')">关闭</button>
+        </div>
+      </div>
+      <form id="assist-form" onsubmit="return false;">
+        <label class="muted" style="font-size:13px;">当前阶段</label>
+        <select id="assist-stage">
+          <option>听</option><option>认</option><option>比</option><option>算</option><option>定</option>
+        </select>
+        <label class="muted" style="font-size:13px;">客户类型</label>
+        <select id="assist-type">
+          <option>品牌野心型</option><option>定位卡位型</option>
+          <option>品类开创者型</option><option>竞争突围型</option>
+          <option>资本叙事型</option><option>全国化扩张型</option><option>品牌焕新型</option>
+        </select>
+        <label class="muted" style="font-size:13px;">客户当前表达</label>
+        <textarea id="assist-transcript" rows="4" placeholder="客户当前表达或你的输入"></textarea>
+        <button type="button" onclick="renderAssistDemo()">生成会中辅助</button>
+      </form>
+      <div id="assist-result" style="display:none;margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- 会后跟进弹窗 -->
+  <div id="followup-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.35);align-items:center;justify-content:center;z-index:100;">
+    <div class="modal-content" style="background:#fff;width:min(720px,92vw);max-height:88vh;overflow:auto;border-radius:14px;padding:18px;">
+      <div class="row" style="margin-bottom:10px;">
+        <h3 style="margin:0;font-size:18px;">📬 会后跟进</h3>
+        <div class="btn-group">
+          <button class="secondary" onclick="closeModal('followup-modal')">关闭</button>
+        </div>
+      </div>
+      <form id="followup-form" onsubmit="return false;">
+        <label class="muted" style="font-size:13px;">客户</label>
+        <select id="followup-customer" onchange="onFollowupCustomerChange()">
+          <option value="1">飞鹤奶粉（品牌野心型）</option>
+          <option value="2">元气森林（品类开创者型）</option>
+        </select>
+        <label class="muted" style="font-size:13px;">会议摘要</label>
+        <textarea id="followup-summary" rows="3" placeholder="会议摘要"></textarea>
+        <div class="btn-group" style="margin-bottom:12px;">
+          <button class="secondary" type="button" onclick="importFromAssist()">📥 从会中辅助导入</button>
+        </div>
+
+        <label class="muted" style="font-size:13px;">决策（点击选择，可多选）</label>
+        <div id="followup-decisions" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 8px;">
+          <span class="tag" onclick="toggleTag(this)" data-group="decisions">确定合作</span>
+          <span class="tag" onclick="toggleTag(this)" data-group="decisions">暂缓</span>
+          <span class="tag" onclick="toggleTag(this)" data-group="decisions">需再评估</span>
+          <span class="tag" onclick="toggleTag(this)" data-group="decisions">指定负责人</span>
+          <span class="tag" onclick="toggleTag(this)" data-group="decisions">明确预算</span>
+        </div>
+        <div id="decisions-summary" class="selected-summary" style="display:none;">
+          <span class="label">已选决策：</span>
+          <span id="decisions-selected"></span>
+          <span class="clear" onclick="clearGroup('decisions')">清空</span>
+        </div>
+        <input id="followup-decisions-input" placeholder="或手动输入决策，用分号分隔" />
+
+        <label class="muted" style="font-size:13px;">待办动作（点击选择，可多选）</label>
+        <div id="followup-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 8px;">
+          <span class="tag" onclick="toggleTag(this)" data-group="actions">发方案</span>
+          <span class="tag" onclick="toggleTag(this)" data-group="actions">约下次会议</span>
+          <span class="tag" onclick="toggleTag(this)" data-group="actions">内部评审</span>
+          <span class="tag" onclick="toggleTag(this)" data-group="actions">报价</span>
+          <span class="tag" onclick="toggleTag(this)" data-group="actions">寄样品</span>
+        </div>
+        <div id="actions-summary" class="selected-summary" style="display:none;">
+          <span class="label">已选待办：</span>
+          <span id="actions-selected"></span>
+          <span class="clear" onclick="clearGroup('actions')">清空</span>
+        </div>
+        <input id="followup-actions-input" placeholder="或手动输入待办，用分号分隔" />
+
+        <button type="button" onclick="renderFollowupDemo()">生成跟进包</button>
+      </form>
+      <div id="followup-result" style="display:none;margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- 类型更新弹窗 -->
+  <div id="type-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.35);align-items:center;justify-content:center;z-index:100;">
+    <div class="modal-content" style="background:#fff;width:min(520px,92vw);max-height:88vh;overflow:auto;border-radius:14px;padding:18px;">
+      <div class="row" style="margin-bottom:10px;">
+        <h3 style="margin:0;font-size:18px;">✏️ 更新客户类型</h3>
+        <div class="btn-group">
+          <button class="secondary" onclick="closeModal('type-modal')">关闭</button>
+        </div>
+      </div>
+      <form id="type-form" onsubmit="return false;">
+        <label class="muted" style="font-size:13px;">主类型</label>
+        <select id="type-primary">
+          <option value="">请选择主类型</option>
+          <option>品牌野心型</option><option>定位卡位型</option>
+          <option>品类开创者型</option><option>竞争突围型</option>
+          <option>资本叙事型</option><option>全国化扩张型</option><option>品牌焕新型</option>
+        </select>
+        <label class="muted" style="font-size:13px;">次类型</label>
+        <input id="type-secondary" placeholder="次类型（可选）" />
+        <label class="muted" style="font-size:13px;">置信度 0~1</label>
+        <input id="type-confidence" type="number" step="0.01" min="0" max="1" placeholder="0.85" />
+        <label class="muted" style="font-size:13px;">类型判断依据</label>
+        <textarea id="type-evidence" rows="3" placeholder="类型判断依据"></textarea>
+        <div class="btn-group">
+          <button type="button" onclick="showToast('原型仅展示交互，不实际提交')">保存</button>
+          <button class="secondary" type="button" onclick="closeModal('type-modal')">取消</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<script>
+  // 全局状态
+  const selectedTags = { decisions: new Set(), actions: new Set() };
+
+  // 页面切换
+  function showPage(pageId) {
+    // 隐藏所有页面
+    document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+    // 显示目标页面
+    const target = document.getElementById(pageId);
+    if (target) target.classList.add('active');
+    // 更新侧边栏高亮
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.page === pageId);
+    });
+    // 移动端关闭侧边栏
+    if (window.innerWidth <= 860) {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('show');
+    }
+  }
+  function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+  }
+  function showModal(id) {
+    document.getElementById(id).style.display = 'flex';
+  }
+
+  // Toast 提示
+  function showToast(msg, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(20px)';
+      setTimeout(() => toast.remove(), 200);
+    }, 2500);
+  }
+
+  // 移动端侧边栏
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('sidebar-overlay').classList.toggle('show');
+  }
+
+  // 登录
+  function doLogin() {
+    document.getElementById('login-page').style.display = 'none';
+    document.getElementById('workbench-page').style.display = 'block';
+    showPage('home-page');
+    showToast('欢迎回来！', 'success');
+  }
+  function skipLogin() {
+    doLogin();
+  }
+  function logout() {
+    document.getElementById('workbench-page').style.display = 'none';
+    document.getElementById('login-page').style.display = 'flex';
+    showToast('已退出登录', 'info');
+  }
+
+  // 客户分析演示
+  function quickAnalyze() {
+    const name = document.getElementById('analyze-name').value.trim();
+    if (!name) return showToast('请输入客户名称', 'error');
+    const container = document.getElementById('analyze-result');
+    container.style.display = 'block';
+    container.innerHTML = '<p class="muted"><span class="spinner"></span> 正在分析中...</p>';
+    setTimeout(() => {
+      container.innerHTML = `
+        <div class="result-block">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <span class="badge badge-green">新客户</span>
+            <span style="font-weight:600;font-size:16px;">${escapeHtml(name)}</span>
+          </div>
+          <p><strong>类型：</strong>品牌野心型 / 全国化扩张型</p>
+          <p><strong>置信度：</strong><span class="badge badge-green">0.85</span></p>
+          <p><strong>判断依据：</strong>客户名称含奶粉品牌，且阶段为扩张期，匹配品牌野心型特征。</p>
+          <p><strong>破冰话术：</strong>老板，您投入的不是单纯的广告费，而是在为企业构建品牌资产。 <button class="copy-btn" onclick="copyText('老板，您投入的不是单纯的广告费，而是在为企业构建品牌资产。')">📋 复制</button></p>
+          <p><strong>重点方向：</strong>把投放定义为品牌资产投资，先做1个核心城市1个月品牌认知测试方案。</p>
+          <p><strong>下一步：</strong>建议先做1个核心城市1个月品牌认知测试方案，用历史品牌资产案例测算长期溢价。</p>
+        </div>
+      `;
+      showToast('分析完成', 'success');
+    }, 800);
+  }
+
+  // 智能识别演示
+  function smartDetect() {
+    const name = document.getElementById('analyze-name').value.trim() || '飞鹤奶粉';
+    document.getElementById('analyze-industry').value = '母婴';
+    document.getElementById('analyze-stage').value = '扩张期';
+    document.getElementById('analyze-revenue').value = '10亿以上';
+    showToast('✨ 已根据知识库预填：行业=母婴，阶段=扩张期，营收=10亿以上', 'success');
+  }
+
+  // 客户创建
+  function createCustomer() {
+    const name = document.getElementById('cust-name').value.trim();
+    if (!name) return showToast('请填写客户名称', 'error');
+    showToast('✅ 客户创建成功（原型演示）', 'success');
+    document.getElementById('customer-form').reset();
+  }
+
+  // 客户搜索与筛选
+  function filterCustomers() {
+    const search = (document.getElementById('customer-search').value || '').toLowerCase();
+    const typeFilter = document.getElementById('filter-type').value;
+    const stageFilter = document.getElementById('filter-stage').value;
+    const rows = document.querySelectorAll('#customer-table-body tr');
+    let visibleCount = 0;
+    rows.forEach(row => {
+      const name = (row.dataset.name || '').toLowerCase();
+      const type = row.dataset.type || '';
+      const stage = row.dataset.stage || '';
+      const matchSearch = !search || name.includes(search);
+      const matchType = !typeFilter || type === typeFilter;
+      const matchStage = !stageFilter || stage === stageFilter;
+      row.style.display = (matchSearch && matchType && matchStage) ? '' : 'none';
+      if (matchSearch && matchType && matchStage) visibleCount++;
+    });
+    document.getElementById('customer-empty').style.display = visibleCount ? 'none' : 'block';
+  }
+
+  // 弹窗
+  function openBriefing(cid) {
+    document.getElementById('briefing-result').innerHTML = '<p class="muted"><span class="spinner"></span> 正在生成会前简报...</p>';
+    showModal('briefing-modal');
+    setTimeout(() => {
+      document.getElementById('briefing-result').innerHTML = `
+        <div class="result-block">
+          <h3>飞鹤奶粉</h3>
+          <p><strong>类型：</strong>品牌野心型 <span class="badge badge-green">置信度 0.85</span></p>
+          <p><strong>判断依据：</strong>客户名称含奶粉品牌，且阶段为扩张期，匹配品牌野心型特征。</p>
+          <p><strong>破冰话术：</strong>老板，您投入的不是单纯的广告费，是在为企业构建品牌资产。 <button class="copy-btn" onclick="copyText('老板，您投入的不是单纯的广告费，是在为企业构建品牌资产。')">📋 复制</button></p>
+          <p><strong>重点方向：</strong>把投放定义为品牌资产投资，先做1个核心城市1个月品牌认知测试方案。</p>
+          <p><strong>下一步：</strong>建议先做1个核心城市1个月品牌认知测试方案，用历史品牌资产案例测算长期溢价。</p>
+          <p><strong>潜在异议：</strong>太贵了；我们再看看</p>
+          <div class="source-card">
+            <div class="source-card-title">📚 引用来源</div>
+            <ul style="padding-left:14px;margin:0;list-style:none;">
+              <li><div><span style="font-weight:600;">分众客户七大类型 · 识别与攻单策略.pptx</span> <span class="badge badge-indigo">破冰</span></div><div class="muted" style="font-size:13px;">品牌野心型 · 策略</div></li>
+            </ul>
+          </div>
+        </div>
+      `;
+    }, 600);
+  }
+  function openAssist(cid) {
+    showModal('assist-modal');
+  }
+  function openFollowup(cid) {
+    showModal('followup-modal');
+  }
+  function openTypeForm(cid) {
+    showModal('type-modal');
+  }
+  function viewCustomerDetail(cid) {
+    showPage('customer-detail-page');
+  }
+
+  // 会议页面联动
+  function onMeetingCustomerChange() {
+    const sel = document.getElementById('meeting-customer');
+    const val = sel.value;
+    const typeMap = { '1': '品牌野心型', '2': '品类开创者型', '3': '品牌焕新型', '4': '全国化扩张型' };
+    const industryMap = { '1': '母婴', '2': '饮料', '3': '服饰', '4': '餐饮' };
+    document.getElementById('meeting-type').value = typeMap[val] || '';
+    document.getElementById('meeting-industry').value = industryMap[val] || '';
+  }
+  function clearMeetingResult() {
+    document.getElementById('meeting-result').innerHTML = '<span class="muted">请在左侧选择客户和动作。</span>';
+  }
+
+  // 会前/会中/会后演示
+  function doBriefing() {
+    const customer = document.getElementById('meeting-customer').value;
+    if (!customer) return showToast('请先选择客户', 'error');
+    openBriefing(customer);
+  }
+  function doAssist() {
+    const customer = document.getElementById('meeting-customer').value;
+    if (!customer) return showToast('请先选择客户', 'error');
+    openAssist(customer);
+  }
+  function doFollowup() {
+    const customer = document.getElementById('meeting-customer').value;
+    if (!customer) return showToast('请先选择客户', 'error');
+    openFollowup(customer);
+  }
+
+  function renderAssistDemo() {
+    const container = document.getElementById('assist-result');
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div class="result-block">
+        <h3>会中辅助</h3>
+        <p><strong>阶段：</strong>听 → 检测到 <strong>认</strong></p>
+        <p><strong>阶段提示：</strong>客户正在表达需求，建议先确认痛点，不要急于介绍方案。</p>
+        <p><strong>建议话术：</strong>我理解您的意思是... 对吗？ <button class="copy-btn" onclick="copyText('我理解您的意思是... 对吗？')">📋 复制</button></p>
+        <p><strong>异议：</strong>未识别</p>
+        <p><strong>异议应答：</strong>-</p>
+      </div>
+    `;
+  }
+
+  // 标签选择与汇总
+  function toggleTag(el) {
+    const group = el.dataset.group;
+    const text = el.textContent.trim();
+    if (selectedTags[group].has(text)) {
+      selectedTags[group].delete(text);
+      el.classList.remove('selected');
+    } else {
+      selectedTags[group].add(text);
+      el.classList.add('selected');
+    }
+    updateSelectedSummary(group);
+  }
+  function updateSelectedSummary(group) {
+    const summary = document.getElementById(group + '-summary');
+    const selected = document.getElementById(group + '-selected');
+    const arr = Array.from(selectedTags[group]);
+    if (arr.length) {
+      summary.style.display = 'flex';
+      selected.textContent = arr.join('、');
+    } else {
+      summary.style.display = 'none';
+    }
+  }
+  function clearGroup(group) {
+    selectedTags[group].clear();
+    document.querySelectorAll(`[data-group="${group}"]`).forEach(el => el.classList.remove('selected'));
+    updateSelectedSummary(group);
+  }
+  function importFromAssist() {
+    document.getElementById('followup-summary').value = '客户对品牌认知测试方案感兴趣，但关注投入产出比。';
+    showToast('📥 已从会中辅助导入会议摘要', 'success');
+  }
+  function onFollowupCustomerChange() {
+    // 可扩展：切换客户时自动带入该客户的历史信息
+  }
+
+  function renderFollowupDemo() {
+    const container = document.getElementById('followup-result');
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div class="result-block">
+        <h3>会后跟进</h3>
+        <p><strong>摘要：</strong>客户对品牌认知测试方案感兴趣，但关注投入产出比。</p>
+        <p><strong>决策：</strong>确定合作；明确预算</p>
+        <p><strong>任务：</strong>发方案(2026-08-15)；约下次会议(2026-08-18)</p>
+        <p><strong>邮件草稿：</strong>尊敬的客户，感谢您今天的时间，附件是品牌认知测试方案...</p>
+        <p><strong>微信跟进：</strong>XX总，今天聊的品牌资产测试方案，我整理了一下...</p>
+      </div>
+    `;
+  }
+
+  // 复制
+  function copyText(text) {
+    navigator.clipboard.writeText(text).catch(() => {});
+    showToast('📋 已复制到剪贴板', 'success');
+  }
+
+  // 快捷提问
+  function askAgent() {
+    const input = document.getElementById('agent-input');
+    const text = input.value.trim();
+    if (!text) return;
+    const box = document.getElementById('agent-messages');
+    box.innerHTML += `<div style="margin:8px 0;padding:8px 12px;border-radius:12px;background:var(--primary);color:#fff;max-width:80%;margin-left:auto;word-break:break-word;">${escapeHtml(text)}</div>`;
+    input.value = '';
+    setTimeout(() => {
+      box.innerHTML += `<div style="margin:8px 0;padding:8px 12px;border-radius:12px;background:#e5e7eb;color:#111827;max-width:80%;word-break:break-word;">已收到你的问题：${escapeHtml(text)}。建议使用"客户分析"功能获取专业建议。</div>`;
+      box.scrollTop = box.scrollHeight;
+    }, 300);
+  }
+  function quickAsk(text) {
+    document.getElementById('agent-input').value = text;
+    askAgent();
+  }
+
+  // 自动生成编码
+  function autoGenCode() {
+    showToast('已生成编码：CASE_' + String(Date.now()).slice(-6), 'success');
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>
