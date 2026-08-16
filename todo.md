@@ -39,3 +39,4 @@
 - [x] 验证 PDF 导出模块的报告内容与下载生成路径
 - [x] 创建客户画像与 PDF 功能的最终交付 checkpoint
 - [x] 保存客户画像与 PDF 功能的实际交付 checkpoint
+- [ ] 提交并推送客户画像与 PDF 功能到 GitHub main 分支
