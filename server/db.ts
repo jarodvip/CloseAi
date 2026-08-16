@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { DealSession, InsertDealSession, InsertUser, dealSessions, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,22 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function createDealSession(input: InsertDealSession) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const result = await db.insert(dealSessions).values(input);
+  return { id: Number(result[0].insertId) };
+}
+
+export async function listDealSessions(userId: number): Promise<DealSession[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(dealSessions).where(eq(dealSessions.userId, userId));
+}
+
+export async function getDealSession(userId: number, id: number): Promise<DealSession | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(dealSessions).where(eq(dealSessions.userId, userId));
+  return result.find(item => item.id === id);
+}

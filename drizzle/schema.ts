@@ -25,4 +25,18 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+export const dealSessions = mysqlTable("deal_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  title: varchar("title", { length: 180 }).notNull(),
+  clientSummary: text("clientSummary").notNull(),
+  primaryType: varchar("primaryType", { length: 80 }).notNull(),
+  secondaryType: varchar("secondaryType", { length: 80 }),
+  diagnosis: text("diagnosis").notNull(),
+  playbook: text("playbook").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DealSession = typeof dealSessions.$inferSelect;
+export type InsertDealSession = typeof dealSessions.$inferInsert;

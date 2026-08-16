@@ -1,33 +1,108 @@
+import { useMemo, useState } from "react";
+import { startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { AIChatBox, type Message } from "@/components/AIChatBox";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { Streamdown } from 'streamdown';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Streamdown } from "streamdown";
+import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
+import { ArrowRight, Bookmark, BrainCircuit, Check, ChevronRight, CircleHelp, Clock3, FileText, LayoutGrid, LogIn, MessageCircle, Search, Send, ShieldCheck, Sparkles, Target, Users } from "lucide-react";
 
-/**
- * All content in this page are only for example, replace with your own feature implementation
- * When building pages, remember your instructions in Frontend Workflow, Frontend Best Practices, Design Guide and Common Pitfalls
- */
+const navItems = [
+  { id: "diagnose", label: "客户诊断", icon: BrainCircuit },
+  { id: "assistant", label: "攻单助手", icon: MessageCircle },
+  { id: "types", label: "七大类型", icon: LayoutGrid },
+  { id: "objections", label: "异议速查", icon: CircleHelp },
+  { id: "records", label: "我的记录", icon: Bookmark },
+] as const;
+
+type SectionId = typeof navItems[number]["id"];
+type FormState = { industry: string; scale: string; keywords: string; competition: string; goal: string; background: string };
+type ChatMessage = { role: "user" | "assistant"; content: string };
+type Playbook = { primaryType: string; secondaryType: string; confidence: string; evidence: string[]; diagnosis: string; strategy: string; steps: { name: string; action: string; output: string }[]; breakIce: string; coreTalk: string; objections: { objection: string; concern: string; response: string }[]; nextAction: string; matchedCases: string[] };
+
 export default function Home() {
-  // The useAuth hook provides authentication state.
-  // To implement login/logout, call logout(), or start login from an event
-  // handler: onClick={() => startLogin()} (imported from "@/const"). Never call
-  // startLogin() during render (no href={startLogin()}) — it mints a one-time
-  // nonce cookie and must run only at the moment of navigation.
-  let { user, loading, error, isAuthenticated, logout } = useAuth();
+  const [section, setSection] = useState<SectionId>("diagnose");
+  const [form, setForm] = useState<FormState>({ industry: "", scale: "", keywords: "", competition: "", goal: "", background: "" });
+  const [playbook, setPlaybook] = useState<Playbook | null>(null);
+  const [search, setSearch] = useState("");
+  const { user } = useAuth();
+  const knowledgeQuery = trpc.gongdan.knowledge.useQuery();
+  const recordsQuery = trpc.gongdan.list.useQuery(undefined, { enabled: Boolean(user) });
+  const diagnose = trpc.gongdan.diagnose.useMutation({ onSuccess: data => { setPlaybook(data as Playbook); setSection("diagnose"); } });
+  const save = trpc.gongdan.save.useMutation({ onSuccess: () => recordsQuery.refetch() });
+  const chat = trpc.gongdan.chat.useMutation();
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
-  // If theme is switchable in App.tsx, we can implement theme toggling like this:
-  // const { theme, toggleTheme } = useTheme();
+  const submitDiagnosis = () => diagnose.mutate(form);
+  const update = (key: keyof typeof form, value: string) => setForm(prev => ({ ...prev, [key]: value }));
+  const filteredTypes = useMemo(() => (knowledgeQuery.data?.customerTypes ?? []).filter(type => `${type.name}${type.short}${type.entry}${type.signals.join("")}`.toLowerCase().includes(search.toLowerCase())), [knowledgeQuery.data, search]);
+  const sendChat = (content: string) => {
+    const next = [...chatMessages, { role: "user" as const, content }];
+    setChatMessages(next);
+    chat.mutate({ messages: next }, { onSuccess: result => setChatMessages(prev => [...prev, { role: "assistant", content: result.content }]) });
+  };
+  const savePlaybook = () => {
+    if (!playbook) return;
+    if (!user) { startLogin(); return; }
+    save.mutate({ title: `${playbook.primaryType} · ${form.industry || "客户诊断"}`, clientSummary: JSON.stringify(form), primaryType: playbook.primaryType, secondaryType: playbook.secondaryType, diagnosis: playbook.diagnosis, playbook: JSON.stringify(playbook) });
+  };
 
-  return (
-    <div className="min-h-screen flex flex-col">
-      <main>
-        {/* Example: lucide-react for icons */}
-        <Loader2 className="animate-spin" />
-        Example Page
-        {/* Example: Streamdown for markdown rendering */}
-        <Streamdown>Any **markdown** content</Streamdown>
-        <Button variant="default">Example Button</Button>
+  return <div className="min-h-screen bg-[#f7f8fa] text-[#19212d]">
+    <header className="sticky top-0 z-30 border-b border-[#e7e9ed] bg-white/90 backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between px-4 sm:px-8">
+        <div className="flex items-center gap-3"><div className="flex size-9 items-center justify-center rounded-xl bg-[#c90019] text-white shadow-[0_5px_16px_rgba(201,0,25,.22)]"><Target className="size-5" /></div><div><div className="text-[15px] font-black tracking-[.16em] text-[#c90019]">攻单 AI</div><div className="text-[10px] font-semibold tracking-[.18em] text-[#8b929e]">分众销售作战台</div></div></div>
+        <div className="hidden items-center gap-2 text-xs text-[#687180] md:flex"><ShieldCheck className="size-4 text-[#c90019]" />基于七大类型与攻单五步法</div>
+        {user ? <div className="flex items-center gap-2 text-xs font-medium"><span className="hidden text-[#687180] sm:inline">{user.name || user.email}</span><div className="flex size-8 items-center justify-center rounded-full bg-[#fcebed] font-bold text-[#c90019]">{(user.name || "销").slice(0, 1)}</div></div> : <Button variant="outline" size="sm" onClick={() => startLogin()} className="border-[#e5aab1] text-[#c90019] hover:bg-[#fff4f5]"><LogIn className="mr-2 size-4" />登录保存</Button>}
+      </div>
+    </header>
+    <div className="mx-auto flex max-w-[1500px] flex-col lg:flex-row">
+      <aside className="border-b border-[#e7e9ed] bg-white lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:w-[235px] lg:shrink-0 lg:border-b-0 lg:border-r">
+        <div className="flex gap-1 overflow-x-auto p-3 lg:block lg:space-y-1 lg:p-5"><div className="mb-5 hidden px-3 text-[10px] font-bold uppercase tracking-[.2em] text-[#9ca3af] lg:block">Workspace</div>{navItems.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => setSection(item.id)} className={cn("flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all lg:w-full", section === item.id ? "bg-[#c90019] text-white shadow-[0_8px_18px_rgba(201,0,25,.18)]" : "text-[#687180] hover:bg-[#f7f8fa] hover:text-[#19212d]")}><Icon className="size-4" />{item.label}{item.id === "records" && user && <span className="ml-auto rounded-full bg-white/20 px-2 py-0.5 text-[10px]">{recordsQuery.data?.length ?? 0}</span>}</button> })}</div>
+        <div className="mx-5 hidden rounded-2xl bg-[#1f2937] p-4 text-white lg:block"><div className="mb-2 flex items-center gap-2 text-xs font-bold"><Sparkles className="size-4 text-[#ffbcc5]" />销售提示</div><p className="text-[11px] leading-5 text-white/70">前 10 分钟只问不推。先辨类，再选武器上膛。</p></div>
+      </aside>
+      <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 lg:px-10">
+        {section === "diagnose" && <DiagnosePanel form={form} update={update} submit={submitDiagnosis} loading={diagnose.isPending} playbook={playbook} savePlaybook={savePlaybook} saving={save.isPending} />}
+        {section === "assistant" && <section><PageHeading eyebrow="AI 攻单助手" title="把客户背景，变成下一步动作" description="输入一段客户背景，AI 会基于内置知识库判断类型、匹配案例，并按‘听 / 认 / 比 / 算 / 定’组织建议。" /><AIChatBox messages={chatMessages} onSendMessage={sendChat} isLoading={chat.isPending} height={580} placeholder="例如：一家区域护肤品牌，南方很强，准备进入北上广深……" emptyStateMessage="先描述客户，再开始攻单" suggestedPrompts={["帮我诊断一家准备全国化的区域品牌", "客户说太贵了，怎么继续推进？", "给我一套品类开创者型的首面打法"]} /></section>}
+        {section === "types" && <TypesPanel types={filteredTypes} search={search} setSearch={setSearch} />}
+        {section === "objections" && <ObjectionsPanel objections={knowledgeQuery.data?.objections ?? []} />}
+        {section === "records" && <RecordsPanel user={user} records={recordsQuery.data ?? []} onLogin={() => startLogin()} />}
       </main>
     </div>
-  );
+  </div>;
 }
+
+function PageHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) { return <div className="mb-7"><div className="mb-2 text-[11px] font-black uppercase tracking-[.2em] text-[#c90019]">{eyebrow}</div><h1 className="text-3xl font-black tracking-[-.04em] text-[#18212e] sm:text-4xl">{title}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-[#687180]">{description}</p></div>; }
+
+function DiagnosePanel({ form, update, submit, loading, playbook, savePlaybook, saving }: { form: FormState; update: (key: keyof FormState, value: string) => void; submit: () => void; loading: boolean; playbook: Playbook | null; savePlaybook: () => void; saving: boolean }) {
+  const [step, setStep] = useState(0);
+  const questions: { key: keyof FormState; label: string; hint: string; chips: string[] }[] = [
+    { key: "industry", label: "先说说客户属于哪个行业？", hint: "例如：国产护肤、鲜炖燕窝、智能家电", chips: ["消费品", "食品饮料", "美妆个护", "智能硬件"] },
+    { key: "scale", label: "客户目前处在什么规模？", hint: "营收、城市覆盖、渠道体量都可以", chips: ["区域龙头", "年营收 1-10 亿", "年营收 10 亿以上", "融资早期"] },
+    { key: "keywords", label: "老板最近最常说哪句话？", hint: "长期主义、翻盘、全国化、估值等原话最有价值", chips: ["我要做行业第一", "我要翻盘", "我要出省", "我要变年轻"] },
+    { key: "competition", label: "客户正在面对什么竞争状态？", hint: "红海、竞品动作、区域优势、新品类空白……", chips: ["红海同质化", "区域强、出省弱", "新品类教育", "竞品已先投"] },
+    { key: "goal", label: "这次拜访最想推进什么目标？", hint: "品牌、增长、融资、扩张或年轻化", chips: ["建立品牌资产", "抢占品类心智", "核心城市打样", "降低试错成本"] },
+    { key: "background", label: "还有什么关键原话或背景？", hint: "可选。写下已投渠道、当前卡点或决策链信息", chips: ["预算敏感", "老板未到场", "线上投放效果差", "暂无补充"] },
+  ];
+  const current = questions[step];
+  const goNext = () => step < questions.length - 1 ? setStep(step + 1) : submit();
+  return <section><PageHeading eyebrow="01 / 客户诊断工作台" title="先辨类，再攻单" description="像真实拜访一样，一问一问补齐客户线索。AI 会在最后一步给出主次类型、同类案例和推进策略。" /><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(420px,.92fr)]"><Card className="border-0 bg-white shadow-[0_12px_35px_rgba(20,30,45,.06)]"><CardHeader className="border-b border-[#eef0f3] pb-5"><div className="flex items-center justify-between"><div><CardTitle className="text-lg">客户问诊 · {String(step + 1).padStart(2, "0")}</CardTitle><p className="mt-1 text-xs text-[#89919d]">每次只聚焦一个问题，先听再判断</p></div><Badge className="bg-[#fff1f3] text-[#c90019] hover:bg-[#fff1f3]">{step + 1} / {questions.length}</Badge></div><div className="mt-5 flex gap-1.5">{questions.map((_, index) => <div key={index} className={cn("h-1 flex-1 rounded-full", index <= step ? "bg-[#c90019]" : "bg-[#edf0f3]")} />)}</div></CardHeader><CardContent className="space-y-6 pt-8"><div><div className="mb-3 text-[11px] font-bold uppercase tracking-[.15em] text-[#c90019]">AI 正在问</div><h2 className="text-2xl font-black tracking-[-.03em]">{current.label}</h2><p className="mt-2 text-sm text-[#89919d]">{current.hint}</p></div><div className="flex flex-wrap gap-2">{current.chips.map(chip => <button key={chip} onClick={() => update(current.key, chip)} className={cn("rounded-full border px-3 py-2 text-xs transition-all", form[current.key] === chip ? "border-[#c90019] bg-[#fff1f3] font-bold text-[#c90019]" : "border-[#e4e7eb] text-[#687180] hover:border-[#e5aab1] hover:text-[#c90019]")}>{chip}</button>)}</div>{current.key === "background" ? <Textarea autoFocus value={form[current.key]} onChange={e => update(current.key, e.target.value)} placeholder={current.hint} className="min-h-[125px] resize-none border-[#e1e5ea] bg-[#fbfcfd] text-sm focus-visible:ring-[#c90019]" /> : <Input autoFocus value={form[current.key]} onChange={e => update(current.key, e.target.value)} placeholder={current.hint} className="h-12 border-[#e1e5ea] bg-[#fbfcfd] text-sm focus-visible:ring-[#c90019]" />}<div className="flex gap-3"><Button variant="outline" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0} className="h-12 flex-1 border-[#e1e5ea]">上一步</Button><Button onClick={goNext} disabled={loading} className="h-12 flex-[2] bg-[#c90019] font-bold hover:bg-[#a90015]">{loading ? <><Sparkles className="mr-2 size-4 animate-pulse" />正在组装策略…</> : step === questions.length - 1 ? <><BrainCircuit className="mr-2 size-4" />开始 AI 诊断</> : <>下一问 <ArrowRight className="ml-2 size-4" /></>}</Button></div></CardContent></Card>{playbook ? <PlaybookResult playbook={playbook} savePlaybook={savePlaybook} saving={saving} /> : <EmptyResult />}</div></section>;
+}
+
+function Field({ label, hint, value, onChange }: { label: string; hint: string; value: string; onChange: (value: string) => void }) { return <div><label className="mb-2 block text-xs font-bold text-[#384252]">{label}</label><Input value={value} onChange={e => onChange(e.target.value)} placeholder={hint} className="h-11 border-[#e1e5ea] bg-[#fbfcfd] text-sm focus-visible:ring-[#c90019]" /></div>; }
+
+function EmptyResult() { return <div className="flex min-h-[620px] flex-col justify-between rounded-2xl bg-[#202a36] p-7 text-white shadow-[0_18px_40px_rgba(20,30,45,.12)]"><div><div className="mb-5 flex size-12 items-center justify-center rounded-2xl bg-white/10"><Target className="size-6 text-[#ffb1ba]" /></div><h2 className="text-2xl font-black tracking-[-.03em]">你的诊断结果<br /><span className="text-[#ffb1ba]">会出现在这里</span></h2><p className="mt-4 max-w-sm text-sm leading-6 text-white/60">AI 将把客户的模糊表达，翻译成销售可执行的客户类型、核心矛盾和推进动作。</p></div><div className="space-y-3 text-xs text-white/60"><div className="flex items-center gap-3"><span className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white">01</span>主类型 + 次类型判断</div><div className="flex items-center gap-3"><span className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white">02</span>同类案例自动匹配</div><div className="flex items-center gap-3"><span className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white">03</span>五步攻单推进建议</div></div></div>; }
+
+function PlaybookResult({ playbook, savePlaybook, saving }: { playbook: Playbook; savePlaybook: () => void; saving: boolean }) { return <div className="space-y-4"><Card className="border-0 bg-[#202a36] text-white shadow-[0_18px_40px_rgba(20,30,45,.12)]"><CardContent className="p-6"><div className="flex items-start justify-between gap-4"><div><div className="mb-2 text-[10px] font-bold uppercase tracking-[.2em] text-[#ff9faa]">AI Diagnosis</div><h2 className="text-2xl font-black">{playbook.primaryType}</h2><p className="mt-1 text-sm text-white/60">次类型：{playbook.secondaryType} · 置信度：{playbook.confidence}</p></div><Button onClick={savePlaybook} disabled={saving} size="sm" className="bg-white/10 text-white hover:bg-white/20">{saving ? "保存中" : <><Bookmark className="mr-2 size-4" />保存方案</>}</Button></div><div className="mt-5 flex flex-wrap gap-2">{playbook.evidence.map(item => <span key={item} className="rounded-full bg-white/10 px-3 py-1.5 text-xs text-white/80">{item}</span>)}</div><div className="mt-5 border-t border-white/10 pt-5"><div className="mb-2 text-xs font-bold text-[#ffb1ba]">处境点破</div><p className="text-sm leading-6 text-white/80">{playbook.diagnosis}</p></div></CardContent></Card><Card className="border-0 bg-white shadow-[0_12px_35px_rgba(20,30,45,.06)]"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Sparkles className="size-4 text-[#c90019]" />定制攻单策略</CardTitle></CardHeader><CardContent className="space-y-5"><p className="text-sm leading-6 text-[#4c5664]">{playbook.strategy}</p><div className="rounded-xl border border-[#f1d0d4] bg-[#fff8f8] p-4"><div className="mb-3 flex items-center gap-2 text-xs font-bold text-[#c90019]"><FileText className="size-4" />自动匹配案例</div><div className="flex flex-wrap gap-2">{playbook.matchedCases.map(item => <span key={item} className="rounded-full bg-white px-3 py-2 text-xs font-bold text-[#5f6876] shadow-sm">{item}</span>)}</div><p className="mt-3 text-[11px] leading-5 text-[#a4585f]">案例匹配由客户主类型与次类型自动关联，具体数据仅引用内置文档案例。</p></div><div className="grid gap-3 sm:grid-cols-2">{playbook.steps.map((step, index) => <div key={step.name} className="rounded-xl bg-[#f8f9fb] p-4"><div className="mb-2 flex items-center gap-2"><span className="text-xs font-black text-[#c90019]">0{index + 1}</span><span className="text-sm font-bold">{step.name}</span></div><p className="text-xs leading-5 text-[#687180]">{step.action}</p><div className="mt-2 text-[11px] font-semibold text-[#a4585f]">产出：{step.output}</div></div>)}</div><div className="grid gap-4 border-t border-[#edf0f3] pt-5 sm:grid-cols-2"><Quote label="一句话破冰" text={playbook.breakIce} /><Quote label="核心沟通话术" text={playbook.coreTalk} /></div><div className="rounded-xl border border-[#f1d0d4] bg-[#fff8f8] p-4"><div className="mb-2 flex items-center gap-2 text-xs font-bold text-[#c90019]"><ArrowRight className="size-4" />建议下一步</div><p className="text-sm font-semibold leading-6 text-[#4c5664]">{playbook.nextAction}</p></div></CardContent></Card></div>; }
+
+function Quote({ label, text }: { label: string; text: string }) { return <div><div className="mb-2 text-[11px] font-bold uppercase tracking-[.1em] text-[#c90019]">{label}</div><p className="border-l-2 border-[#c90019] pl-3 text-sm italic leading-6 text-[#4c5664]">“{text}”</p></div>; }
+
+function TypesPanel({ types, search, setSearch }: { types: readonly any[]; search: string; setSearch: (v: string) => void }) { return <section><PageHeading eyebrow="02 / 七大类型速查卡" title="见客户先对号入座" description="七种典型动机，七套沟通武器。先识别客户在为什么买，再决定你要讲什么。" /><div className="mb-6 flex max-w-xl items-center gap-3 rounded-xl bg-white px-4 shadow-sm"><Search className="size-4 text-[#9aa1ac]" /><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索客户类型、识别信号或切入点" className="h-12 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0" /></div><div className="grid gap-4 xl:grid-cols-2">{types.map((type: any, index: number) => <Card key={type.id} className="border-0 bg-white shadow-[0_10px_30px_rgba(20,30,45,.05)]"><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-xl bg-[#fff1f3] text-xs font-black text-[#c90019]">0{index + 1}</span><div><h3 className="font-black">{type.name}</h3><p className="mt-0.5 text-xs text-[#9aa1ac]">{type.dimension} · “{type.short}”</p></div></div><Badge variant="outline" className="border-[#f0d0d4] text-[#c90019]">{type.entry}</Badge></div><div className="mt-5 grid gap-4 text-sm sm:grid-cols-2"><div><div className="mb-2 text-[11px] font-bold text-[#9aa1ac]">识别信号</div><ul className="space-y-1.5 text-xs leading-5 text-[#5f6876]">{type.signals.map((signal: string) => <li key={signal} className="flex gap-2"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-[#c90019]" />{signal}</li>)}</ul></div><div><div className="mb-2 text-[11px] font-bold text-[#9aa1ac]">核心沟通</div><p className="text-xs leading-5 text-[#5f6876]">{type.coreTalk}</p><div className="mt-3 rounded-lg bg-[#fff8f8] p-3 text-[11px] leading-5 text-[#a4585f]"><span className="font-bold">忌讳：</span>{type.taboo}</div></div></div></CardContent></Card>)}</div></section>; }
+
+function ObjectionsPanel({ objections }: { objections: readonly any[] }) { const [active, setActive] = useState(0); const item = objections[active]; return <section><PageHeading eyebrow="03 / 异议速查" title="拒绝不是结束，是探需入口" description="先听懂表面理由背后的真实顾虑，再用降低风险、补齐决策链和量化价值的方式推进。" /><div className="grid gap-6 lg:grid-cols-[250px_1fr]"><div className="space-y-2">{objections.map((objection, index) => <button key={objection.label} onClick={() => setActive(index)} className={cn("w-full rounded-xl px-4 py-3 text-left text-sm font-bold transition-all", index === active ? "bg-[#c90019] text-white shadow-[0_8px_18px_rgba(201,0,25,.18)]" : "bg-white text-[#687180] hover:bg-[#fff4f5]")}>{objection.label}<ChevronRight className="float-right mt-0.5 size-4" /></button>)}</div>{item && <Card className="border-0 bg-white shadow-[0_12px_35px_rgba(20,30,45,.06)]"><CardContent className="p-7"><div className="mb-8 flex size-14 items-center justify-center rounded-2xl bg-[#fff1f3] text-[#c90019]"><CircleHelp className="size-7" /></div><div className="text-sm font-bold text-[#c90019]">客户说</div><h2 className="mt-1 text-3xl font-black tracking-[-.04em]">“{item.label}”</h2><div className="my-8 grid gap-6 sm:grid-cols-2"><div><div className="mb-2 text-[11px] font-bold uppercase tracking-[.15em] text-[#9aa1ac]">真实顾虑</div><p className="text-sm leading-6 text-[#5f6876]">{item.concern}</p></div><div><div className="mb-2 text-[11px] font-bold uppercase tracking-[.15em] text-[#9aa1ac]">应对策略</div><p className="text-sm leading-6 text-[#5f6876]">{item.response}</p></div></div><div className="rounded-xl bg-[#202a36] p-5 text-sm leading-7 text-white/85"><span className="mr-2 font-bold text-[#ffb1ba]">推进提醒</span>不要马上反驳。先用问题确认顾虑，再把下一步动作拆小，让客户能低风险地继续。</div></CardContent></Card>}</div></section>; }
+
+function RecordsPanel({ user, records, onLogin }: { user: any; records: any[]; onLogin: () => void }) { const [selected, setSelected] = useState<any | null>(null); return <section><PageHeading eyebrow="04 / 我的记录" title="把每一次拜访，变成下一次准备" description="保存客户诊断与攻单方案，拜访前快速复习，跟进时继续推进。" />{!user ? <Card className="border-0 bg-white shadow-sm"><CardContent className="flex flex-col items-center p-12 text-center"><Bookmark className="mb-4 size-10 text-[#c90019]" /><h2 className="text-xl font-black">登录后保存你的攻单记录</h2><p className="mt-2 max-w-md text-sm leading-6 text-[#687180]">诊断和 AI 助手可以先体验；登录后，你可以保存每次诊断方案并在下次拜访前复习。</p><Button onClick={onLogin} className="mt-6 bg-[#c90019] hover:bg-[#a90015]"><LogIn className="mr-2 size-4" />立即登录</Button></CardContent></Card> : selected ? <Card className="border-0 bg-white shadow-sm"><CardContent className="p-6"><button onClick={() => setSelected(null)} className="mb-5 text-xs font-bold text-[#c90019]">← 返回记录列表</button><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-black">{selected.title}</h2><Badge className="bg-[#fff1f3] text-[#c90019] hover:bg-[#fff1f3]">{selected.primaryType}</Badge></div><p className="mt-4 text-sm leading-6 text-[#5f6876]">{selected.diagnosis}</p><div className="mt-6 rounded-xl bg-[#202a36] p-5 text-sm leading-7 text-white/85"><div className="mb-2 text-xs font-bold text-[#ffb1ba]">已保存攻单方案</div><Streamdown>{selected.playbook}</Streamdown></div></CardContent></Card> : <div className="space-y-3">{records.length ? records.map(record => <button key={record.id} onClick={() => setSelected(record)} className="block w-full text-left"><Card className="border-0 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"><CardContent className="flex items-center justify-between gap-4 p-5"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold">{record.title}</h3><Badge className="bg-[#fff1f3] text-[#c90019] hover:bg-[#fff1f3]">{record.primaryType}</Badge></div><p className="mt-2 line-clamp-1 text-xs text-[#89919d]">{record.diagnosis}</p></div><div className="hidden items-center gap-2 text-xs text-[#9aa1ac] sm:flex"><Clock3 className="size-4" />{new Date(record.createdAt).toLocaleDateString()}<ChevronRight className="size-4" /></div></CardContent></Card></button>) : <Card className="border-0 bg-white shadow-sm"><CardContent className="p-12 text-center text-sm text-[#89919d]">还没有保存记录。完成一次客户诊断后，点击“保存方案”即可加入这里。</CardContent></Card>}</div>}</section>; }
