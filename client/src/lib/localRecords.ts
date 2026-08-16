@@ -1,10 +1,16 @@
 export type StoredRecord = {
   id: string;
   title: string;
+  brandName?: string;
   primaryType: string;
+  secondaryType?: string;
   diagnosis: string;
   playbook: string;
   createdAt: string;
+  status?: "待拜访" | "跟进中" | "已推进" | "暂缓";
+  followUpDate?: string;
+  visitFeedback?: string;
+  objectionOutcome?: string;
 };
 
 export const RECORDS_KEY = "gongdan-ai-local-records";

@@ -12,7 +12,7 @@ function memoryStorage() {
 describe("local deal records", () => {
   it("restores saved records after a new page session", () => {
     const storage = memoryStorage();
-    const records = [{ id: "1", title: "全国化客户", primaryType: "全国化扩张型", diagnosis: "认知先行", playbook: "复习方案", createdAt: "2026-08-16T00:00:00.000Z" }];
+    const records = [{ id: "1", title: "全国化客户", brandName: "花西子", primaryType: "全国化扩张型", secondaryType: "品牌野心型", diagnosis: "认知先行", playbook: "复习方案", createdAt: "2026-08-16T00:00:00.000Z", status: "跟进中" as const, followUpDate: "2026-08-20", visitFeedback: "老板认可试点城市", objectionOutcome: "预算异议已拆成小范围测试" }];
     saveLocalRecords(storage, records);
     expect(loadLocalRecords(storage)).toEqual(records);
   });

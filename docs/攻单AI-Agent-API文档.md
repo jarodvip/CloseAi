@@ -289,10 +289,16 @@ type DealSessionInput = {
 export type StoredRecord = {
   id: string;
   title: string;
+  brandName?: string;
   primaryType: string;
+  secondaryType?: string;
   diagnosis: string;
   playbook: string;
   createdAt: string;
+  status?: "待拜访" | "跟进中" | "已推进" | "暂缓";
+  followUpDate?: string;
+  visitFeedback?: string;
+  objectionOutcome?: string;
 };
 ```
 
@@ -303,7 +309,7 @@ loadLocalRecords(storage): StoredRecord[];
 saveLocalRecords(storage, records): void;
 ```
 
-`loadLocalRecords` 在键不存在、JSON 无效或数据结构异常时返回空数组；`saveLocalRecords` 将完整数组序列化后写回 `gongdan-ai-local-records`。集成方如果要增加导入/导出，应保持字段兼容，并建议在记录中增加版本号，而不是改变既有字段含义。
+`loadLocalRecords` 在键不存在、JSON 无效或数据结构异常时返回空数组；`saveLocalRecords` 将完整数组序列化后写回 `gongdan-ai-local-records`。闭环回写字段 `status`、`followUpDate`、`visitFeedback` 和 `objectionOutcome` 用于记录拜访后的推进状态、下一次跟进日期、客户反馈与异议处理结果。集成方如果要增加导入/导出，应保持字段兼容，并建议在记录中增加版本号，而不是改变既有字段含义。
 
 ## 6. 客户画像契约
 
