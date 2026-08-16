@@ -1,7 +1,5 @@
-import { useMemo, useState } from "react";
-import { startLogin } from "@/const";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { AIChatBox, type Message } from "@/components/AIChatBox";
+import { useEffect, useMemo, useState } from "react";
+import { AIChatBox } from "@/components/AIChatBox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Streamdown } from "streamdown";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { ArrowRight, Bookmark, BrainCircuit, Check, ChevronRight, CircleHelp, Clock3, FileText, LayoutGrid, LogIn, MessageCircle, Search, Send, ShieldCheck, Sparkles, Target, Users } from "lucide-react";
+import { loadLocalRecords, saveLocalRecords, type StoredRecord } from "@/lib/localRecords";
+import { ArrowRight, Bookmark, BrainCircuit, ChevronRight, CircleHelp, Clock3, FileText, LayoutGrid, MessageCircle, Search, ShieldCheck, Sparkles, Target } from "lucide-react";
 
 const navItems = [
   { id: "diagnose", label: "客户诊断", icon: BrainCircuit },
@@ -25,18 +24,26 @@ type FormState = { industry: string; scale: string; keywords: string; competitio
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type Playbook = { primaryType: string; secondaryType: string; confidence: string; evidence: string[]; diagnosis: string; strategy: string; steps: { name: string; action: string; output: string }[]; breakIce: string; coreTalk: string; objections: { objection: string; concern: string; response: string }[]; nextAction: string; matchedCases: string[] };
 
+function toReviewMarkdown(playbook: Playbook) {
+  return `## ${playbook.primaryType}\n\n**次类型：** ${playbook.secondaryType}\n\n### 处境点破\n${playbook.diagnosis}\n\n### 攻单策略\n${playbook.strategy}\n\n### 一句话破冰\n> ${playbook.breakIce}\n\n### 核心沟通话术\n> ${playbook.coreTalk}\n\n### 建议下一步\n${playbook.nextAction}\n\n### 匹配案例\n${playbook.matchedCases.map(item => `- ${item}`).join("\n")}`;
+}
+
 export default function Home() {
   const [section, setSection] = useState<SectionId>("diagnose");
   const [form, setForm] = useState<FormState>({ industry: "", scale: "", keywords: "", competition: "", goal: "", background: "" });
   const [playbook, setPlaybook] = useState<Playbook | null>(null);
   const [search, setSearch] = useState("");
-  const { user } = useAuth();
   const knowledgeQuery = trpc.gongdan.knowledge.useQuery();
-  const recordsQuery = trpc.gongdan.list.useQuery(undefined, { enabled: Boolean(user) });
   const diagnose = trpc.gongdan.diagnose.useMutation({ onSuccess: data => { setPlaybook(data as Playbook); setSection("diagnose"); } });
-  const save = trpc.gongdan.save.useMutation({ onSuccess: () => recordsQuery.refetch() });
   const chat = trpc.gongdan.chat.useMutation();
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [records, setRecords] = useState<StoredRecord[]>([]);
+
+  useEffect(() => {
+    try {
+      setRecords(loadLocalRecords(window.localStorage));
+    } catch { setRecords([]); }
+  }, []);
 
   const submitDiagnosis = () => diagnose.mutate(form);
   const update = (key: keyof typeof form, value: string) => setForm(prev => ({ ...prev, [key]: value }));
@@ -48,8 +55,12 @@ export default function Home() {
   };
   const savePlaybook = () => {
     if (!playbook) return;
-    if (!user) { startLogin(); return; }
-    save.mutate({ title: `${playbook.primaryType} · ${form.industry || "客户诊断"}`, clientSummary: JSON.stringify(form), primaryType: playbook.primaryType, secondaryType: playbook.secondaryType, diagnosis: playbook.diagnosis, playbook: JSON.stringify(playbook) });
+    const record: StoredRecord = { id: `${Date.now()}`, title: `${playbook.primaryType} · ${form.industry || "客户诊断"}`, primaryType: playbook.primaryType, diagnosis: playbook.diagnosis, playbook: toReviewMarkdown(playbook), createdAt: new Date().toISOString() };
+    setRecords(previous => {
+      const next = [record, ...previous];
+      saveLocalRecords(window.localStorage, next);
+      return next;
+    });
   };
 
   return <div className="min-h-screen bg-[#f7f8fa] text-[#19212d]">
@@ -57,20 +68,20 @@ export default function Home() {
       <div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between px-4 sm:px-8">
         <div className="flex items-center gap-3"><div className="flex size-9 items-center justify-center rounded-xl bg-[#c90019] text-white shadow-[0_5px_16px_rgba(201,0,25,.22)]"><Target className="size-5" /></div><div><div className="text-[15px] font-black tracking-[.16em] text-[#c90019]">攻单 AI</div><div className="text-[10px] font-semibold tracking-[.18em] text-[#8b929e]">分众销售作战台</div></div></div>
         <div className="hidden items-center gap-2 text-xs text-[#687180] md:flex"><ShieldCheck className="size-4 text-[#c90019]" />基于七大类型与攻单五步法</div>
-        {user ? <div className="flex items-center gap-2 text-xs font-medium"><span className="hidden text-[#687180] sm:inline">{user.name || user.email}</span><div className="flex size-8 items-center justify-center rounded-full bg-[#fcebed] font-bold text-[#c90019]">{(user.name || "销").slice(0, 1)}</div></div> : <Button variant="outline" size="sm" onClick={() => startLogin()} className="border-[#e5aab1] text-[#c90019] hover:bg-[#fff4f5]"><LogIn className="mr-2 size-4" />登录保存</Button>}
+        <Badge className="border-[#f0d0d4] bg-[#fff7f8] text-[#c90019] hover:bg-[#fff7f8]">免登录可用</Badge>
       </div>
     </header>
     <div className="mx-auto flex max-w-[1500px] flex-col lg:flex-row">
       <aside className="border-b border-[#e7e9ed] bg-white lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:w-[235px] lg:shrink-0 lg:border-b-0 lg:border-r">
-        <div className="flex gap-1 overflow-x-auto p-3 lg:block lg:space-y-1 lg:p-5"><div className="mb-5 hidden px-3 text-[10px] font-bold uppercase tracking-[.2em] text-[#9ca3af] lg:block">Workspace</div>{navItems.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => setSection(item.id)} className={cn("flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all lg:w-full", section === item.id ? "bg-[#c90019] text-white shadow-[0_8px_18px_rgba(201,0,25,.18)]" : "text-[#687180] hover:bg-[#f7f8fa] hover:text-[#19212d]")}><Icon className="size-4" />{item.label}{item.id === "records" && user && <span className="ml-auto rounded-full bg-white/20 px-2 py-0.5 text-[10px]">{recordsQuery.data?.length ?? 0}</span>}</button> })}</div>
+        <div className="flex gap-1 overflow-x-auto p-3 lg:block lg:space-y-1 lg:p-5"><div className="mb-5 hidden px-3 text-[10px] font-bold uppercase tracking-[.2em] text-[#9ca3af] lg:block">Workspace</div>{navItems.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => setSection(item.id)} className={cn("flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all lg:w-full", section === item.id ? "bg-[#c90019] text-white shadow-[0_8px_18px_rgba(201,0,25,.18)]" : "text-[#687180] hover:bg-[#f7f8fa] hover:text-[#19212d]")}><Icon className="size-4" />{item.label}{item.id === "records" && <span className="ml-auto rounded-full bg-white/20 px-2 py-0.5 text-[10px]">{records.length}</span>}</button> })}</div>
         <div className="mx-5 hidden rounded-2xl bg-[#1f2937] p-4 text-white lg:block"><div className="mb-2 flex items-center gap-2 text-xs font-bold"><Sparkles className="size-4 text-[#ffbcc5]" />销售提示</div><p className="text-[11px] leading-5 text-white/70">前 10 分钟只问不推。先辨类，再选武器上膛。</p></div>
       </aside>
       <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 lg:px-10">
-        {section === "diagnose" && <DiagnosePanel form={form} update={update} submit={submitDiagnosis} loading={diagnose.isPending} playbook={playbook} savePlaybook={savePlaybook} saving={save.isPending} />}
+        {section === "diagnose" && <DiagnosePanel form={form} update={update} submit={submitDiagnosis} loading={diagnose.isPending} playbook={playbook} savePlaybook={savePlaybook} saving={false} />}
         {section === "assistant" && <section><PageHeading eyebrow="AI 攻单助手" title="把客户背景，变成下一步动作" description="输入一段客户背景，AI 会基于内置知识库判断类型、匹配案例，并按‘听 / 认 / 比 / 算 / 定’组织建议。" /><AIChatBox messages={chatMessages} onSendMessage={sendChat} isLoading={chat.isPending} height={580} placeholder="例如：一家区域护肤品牌，南方很强，准备进入北上广深……" emptyStateMessage="先描述客户，再开始攻单" suggestedPrompts={["帮我诊断一家准备全国化的区域品牌", "客户说太贵了，怎么继续推进？", "给我一套品类开创者型的首面打法"]} /></section>}
         {section === "types" && <TypesPanel types={filteredTypes} search={search} setSearch={setSearch} />}
         {section === "objections" && <ObjectionsPanel objections={knowledgeQuery.data?.objections ?? []} />}
-        {section === "records" && <RecordsPanel user={user} records={recordsQuery.data ?? []} onLogin={() => startLogin()} />}
+        {section === "records" && <RecordsPanel records={records} />}
       </main>
     </div>
   </div>;
@@ -105,4 +116,4 @@ function TypesPanel({ types, search, setSearch }: { types: readonly any[]; searc
 
 function ObjectionsPanel({ objections }: { objections: readonly any[] }) { const [active, setActive] = useState(0); const item = objections[active]; return <section><PageHeading eyebrow="03 / 异议速查" title="拒绝不是结束，是探需入口" description="先听懂表面理由背后的真实顾虑，再用降低风险、补齐决策链和量化价值的方式推进。" /><div className="grid gap-6 lg:grid-cols-[250px_1fr]"><div className="space-y-2">{objections.map((objection, index) => <button key={objection.label} onClick={() => setActive(index)} className={cn("w-full rounded-xl px-4 py-3 text-left text-sm font-bold transition-all", index === active ? "bg-[#c90019] text-white shadow-[0_8px_18px_rgba(201,0,25,.18)]" : "bg-white text-[#687180] hover:bg-[#fff4f5]")}>{objection.label}<ChevronRight className="float-right mt-0.5 size-4" /></button>)}</div>{item && <Card className="border-0 bg-white shadow-[0_12px_35px_rgba(20,30,45,.06)]"><CardContent className="p-7"><div className="mb-8 flex size-14 items-center justify-center rounded-2xl bg-[#fff1f3] text-[#c90019]"><CircleHelp className="size-7" /></div><div className="text-sm font-bold text-[#c90019]">客户说</div><h2 className="mt-1 text-3xl font-black tracking-[-.04em]">“{item.label}”</h2><div className="my-8 grid gap-6 sm:grid-cols-2"><div><div className="mb-2 text-[11px] font-bold uppercase tracking-[.15em] text-[#9aa1ac]">真实顾虑</div><p className="text-sm leading-6 text-[#5f6876]">{item.concern}</p></div><div><div className="mb-2 text-[11px] font-bold uppercase tracking-[.15em] text-[#9aa1ac]">应对策略</div><p className="text-sm leading-6 text-[#5f6876]">{item.response}</p></div></div><div className="rounded-xl bg-[#202a36] p-5 text-sm leading-7 text-white/85"><span className="mr-2 font-bold text-[#ffb1ba]">推进提醒</span>不要马上反驳。先用问题确认顾虑，再把下一步动作拆小，让客户能低风险地继续。</div></CardContent></Card>}</div></section>; }
 
-function RecordsPanel({ user, records, onLogin }: { user: any; records: any[]; onLogin: () => void }) { const [selected, setSelected] = useState<any | null>(null); return <section><PageHeading eyebrow="04 / 我的记录" title="把每一次拜访，变成下一次准备" description="保存客户诊断与攻单方案，拜访前快速复习，跟进时继续推进。" />{!user ? <Card className="border-0 bg-white shadow-sm"><CardContent className="flex flex-col items-center p-12 text-center"><Bookmark className="mb-4 size-10 text-[#c90019]" /><h2 className="text-xl font-black">登录后保存你的攻单记录</h2><p className="mt-2 max-w-md text-sm leading-6 text-[#687180]">诊断和 AI 助手可以先体验；登录后，你可以保存每次诊断方案并在下次拜访前复习。</p><Button onClick={onLogin} className="mt-6 bg-[#c90019] hover:bg-[#a90015]"><LogIn className="mr-2 size-4" />立即登录</Button></CardContent></Card> : selected ? <Card className="border-0 bg-white shadow-sm"><CardContent className="p-6"><button onClick={() => setSelected(null)} className="mb-5 text-xs font-bold text-[#c90019]">← 返回记录列表</button><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-black">{selected.title}</h2><Badge className="bg-[#fff1f3] text-[#c90019] hover:bg-[#fff1f3]">{selected.primaryType}</Badge></div><p className="mt-4 text-sm leading-6 text-[#5f6876]">{selected.diagnosis}</p><div className="mt-6 rounded-xl bg-[#202a36] p-5 text-sm leading-7 text-white/85"><div className="mb-2 text-xs font-bold text-[#ffb1ba]">已保存攻单方案</div><Streamdown>{selected.playbook}</Streamdown></div></CardContent></Card> : <div className="space-y-3">{records.length ? records.map(record => <button key={record.id} onClick={() => setSelected(record)} className="block w-full text-left"><Card className="border-0 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"><CardContent className="flex items-center justify-between gap-4 p-5"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold">{record.title}</h3><Badge className="bg-[#fff1f3] text-[#c90019] hover:bg-[#fff1f3]">{record.primaryType}</Badge></div><p className="mt-2 line-clamp-1 text-xs text-[#89919d]">{record.diagnosis}</p></div><div className="hidden items-center gap-2 text-xs text-[#9aa1ac] sm:flex"><Clock3 className="size-4" />{new Date(record.createdAt).toLocaleDateString()}<ChevronRight className="size-4" /></div></CardContent></Card></button>) : <Card className="border-0 bg-white shadow-sm"><CardContent className="p-12 text-center text-sm text-[#89919d]">还没有保存记录。完成一次客户诊断后，点击“保存方案”即可加入这里。</CardContent></Card>}</div>}</section>; }
+function RecordsPanel({ records }: { records: StoredRecord[] }) { const [selected, setSelected] = useState<StoredRecord | null>(null); return <section><PageHeading eyebrow="04 / 我的记录" title="把每一次拜访，变成下一次准备" description="无需登录。记录保存在当前浏览器中，刷新后仍可在这台设备上复习。" />{selected ? <Card className="border-0 bg-white shadow-sm"><CardContent className="p-6"><button onClick={() => setSelected(null)} className="mb-5 text-xs font-bold text-[#c90019]">← 返回记录列表</button><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-black">{selected.title}</h2><Badge className="bg-[#fff1f3] text-[#c90019] hover:bg-[#fff1f3]">{selected.primaryType}</Badge></div><p className="mt-4 text-sm leading-6 text-[#5f6876]">{selected.diagnosis}</p><div className="mt-6 rounded-xl bg-[#202a36] p-5 text-sm leading-7 text-white/85"><div className="mb-2 text-xs font-bold text-[#ffb1ba]">已保存攻单方案</div><Streamdown>{selected.playbook}</Streamdown></div></CardContent></Card> : <div className="space-y-3">{records.length ? records.map(record => <button key={record.id} onClick={() => setSelected(record)} className="block w-full text-left"><Card className="border-0 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"><CardContent className="flex items-center justify-between gap-4 p-5"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold">{record.title}</h3><Badge className="bg-[#fff1f3] text-[#c90019] hover:bg-[#fff1f3]">{record.primaryType}</Badge></div><p className="mt-2 line-clamp-1 text-xs text-[#89919d]">{record.diagnosis}</p></div><div className="hidden items-center gap-2 text-xs text-[#9aa1ac] sm:flex"><Clock3 className="size-4" />{new Date(record.createdAt).toLocaleDateString()}<ChevronRight className="size-4" /></div></CardContent></Card></button>) : <Card className="border-0 bg-white shadow-sm"><CardContent className="flex flex-col items-center p-12 text-center"><Bookmark className="mb-4 size-10 text-[#c90019]" /><h2 className="text-xl font-black">还没有攻单记录</h2><p className="mt-2 max-w-md text-sm leading-6 text-[#687180]">完成一次客户诊断后，点击“保存方案”，记录将保存在当前浏览器中，无需登录。</p></CardContent></Card>}</div>}</section>; }
