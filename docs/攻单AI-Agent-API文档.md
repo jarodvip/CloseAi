@@ -59,6 +59,7 @@ GET  /api/trpc/gongdan.knowledge
 
 ```ts
 export type ClientInput = {
+  brandName?: string;      // 最长 240 字符，默认 ""
   industry?: string;      // 最长 1200 字符，默认 ""
   scale?: string;         // 最长 1200 字符，默认 ""
   keywords?: string;      // 最长 1200 字符，默认 ""
@@ -175,6 +176,7 @@ export type Playbook = {
 
 ```json
 {
+  "brandName": "花西子",
   "industry": "美妆个护",
   "scale": "区域龙头",
   "keywords": "我要出省、要打爆一个市场",
@@ -309,6 +311,7 @@ saveLocalRecords(storage, records): void;
 
 ```ts
 export type CustomerProfile = {
+  brandName: string;
   title: string;
   summary: string;
   customerStage: string;
@@ -323,7 +326,7 @@ export type CustomerProfile = {
 };
 ```
 
-其中 `watchouts` 取前三条异议的真实顾虑，`evidence` 取最多四条判断依据。输入缺失时会使用“待补充行业”“待确认发展阶段”等占位文字，便于报告明确暴露信息缺口。
+其中 `brandName` 来自诊断输入，并用于画像标题、记录标题和 PDF 报告；`watchouts` 取前三条异议的真实顾虑，`evidence` 取最多四条判断依据。输入缺失时会使用“待补充行业”“待确认发展阶段”等占位文字，便于报告明确暴露信息缺口。
 
 ## 7. PDF 报告导出
 

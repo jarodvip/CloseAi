@@ -1,4 +1,5 @@
 export type CustomerProfileInput = {
+  brandName: string;
   industry: string;
   scale: string;
   keywords: string;
@@ -22,6 +23,7 @@ export type CustomerProfilePlaybook = {
 };
 
 export type CustomerProfile = {
+  brandName: string;
   title: string;
   summary: string;
   customerStage: string;
@@ -38,6 +40,7 @@ export type CustomerProfile = {
 const fallback = (value: string, placeholder: string) => value.trim() || placeholder;
 
 export function buildCustomerProfile(input: CustomerProfileInput, playbook: CustomerProfilePlaybook): CustomerProfile {
+  const brandName = fallback(input.brandName, "未命名品牌");
   const industry = fallback(input.industry, "待补充行业");
   const stage = fallback(input.scale, "待确认发展阶段");
   const driver = fallback(input.keywords, "待确认老板核心诉求");
@@ -46,8 +49,9 @@ export function buildCustomerProfile(input: CustomerProfileInput, playbook: Cust
   const background = input.background.trim();
 
   return {
-    title: `${industry}客户画像`,
-    summary: `${industry}客户当前处于“${stage}”阶段，呈现出${playbook.primaryType}特征；本次优先围绕“${goal}”建立共识。${background ? `已补充背景：${background}` : ""}`,
+    brandName,
+    title: `${brandName}客户画像`,
+    summary: `${brandName}（${industry}）当前处于“${stage}”阶段，呈现出${playbook.primaryType}特征；本次优先围绕“${goal}”建立共识。${background ? `已补充背景：${background}` : ""}`,
     customerStage: stage,
     decisionDriver: driver,
     marketTension: tension,

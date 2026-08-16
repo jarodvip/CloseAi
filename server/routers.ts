@@ -9,6 +9,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
 const chatMessageSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(12000) });
 const clientInputSchema = z.object({
+  brandName: z.string().max(240).optional().default(""),
   industry: z.string().max(1200).optional().default(""),
   scale: z.string().max(1200).optional().default(""),
   keywords: z.string().max(1200).optional().default(""),
@@ -61,7 +62,7 @@ export const appRouter = router({
         model: "gpt-5-mini",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: `请诊断以下客户，并严格按 JSON Schema 输出。客户信息：\n行业：${input.industry}\n规模：${input.scale}\n老板关键词：${input.keywords}\n竞争状态：${input.competition}\n当前目标：${input.goal}\n补充背景：${input.background}` },
+          { role: "user", content: `请诊断以下客户，并严格按 JSON Schema 输出。客户信息：\n品牌名称：${input.brandName}\n行业：${input.industry}\n规模：${input.scale}\n老板关键词：${input.keywords}\n竞争状态：${input.competition}\n当前目标：${input.goal}\n补充背景：${input.background}` },
         ],
         response_format: { type: "json_schema", json_schema: { name: "gongdan_playbook", strict: true, schema: playbookSchema } },
         reasoning: { effort: "low" },
