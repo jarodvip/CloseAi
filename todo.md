@@ -40,3 +40,8 @@
 - [x] 创建客户画像与 PDF 功能的最终交付 checkpoint
 - [x] 保存客户画像与 PDF 功能的实际交付 checkpoint
 - [ ] 提交并推送客户画像与 PDF 功能到 GitHub main 分支
+- [x] 编写攻单 AI Agent 最新功能详细使用说明
+- [x] 编写攻单 AI Agent API 与数据契约文档
+- [x] 校对并交付使用说明与 API 文档
+- [x] 向用户交付使用说明与 API 文档文件
+- [x] 保存包含两份文档的项目版本
