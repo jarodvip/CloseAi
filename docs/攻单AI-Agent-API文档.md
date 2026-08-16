@@ -309,7 +309,18 @@ loadLocalRecords(storage): StoredRecord[];
 saveLocalRecords(storage, records): void;
 ```
 
-`loadLocalRecords` 在键不存在、JSON 无效或数据结构异常时返回空数组；`saveLocalRecords` 将完整数组序列化后写回 `gongdan-ai-local-records`。闭环回写字段 `status`、`followUpDate`、`visitFeedback` 和 `objectionOutcome` 用于记录拜访后的推进状态、下一次跟进日期、客户反馈与异议处理结果。集成方如果要增加导入/导出，应保持字段兼容，并建议在记录中增加版本号，而不是改变既有字段含义。
+`loadLocalRecords` 在键不存在、JSON 无效或数据结构异常时返回空数组；`saveLocalRecords` 将完整数组序列化后写回 `gongdan-ai-local-records`。闭环回写字段 `status`、`followUpDate`、`visitFeedback` 和 `objectionOutcome` 用于记录拜访后的推进状态、下一次跟进日期、客户反馈与异议处理结果。
+
+提醒与迁移工具函数如下：
+
+```ts
+getFollowUpState(record, now?): "逾期" | "今天" | "即将到期" | "已排期" | "未排期";
+buildFollowUpSummary(record): string;
+exportLocalRecords(records, exportedAt?): string;
+importLocalRecords(raw): StoredRecord[];
+```
+
+导出格式为 `{ version, exportedAt, records }`。导入支持该对象格式，也兼容直接传入记录数组；导入前会校验 `id`、`title`、`primaryType`、`diagnosis`、`playbook` 和 `createdAt` 等必要字段，并按记录 ID 执行“导入优先、本机未冲突记录保留”的合并策略。集成方如果要增加导入/导出，应保持字段兼容，并建议在记录中增加版本号，而不是改变既有字段含义。
 
 ## 6. 客户画像契约
 
