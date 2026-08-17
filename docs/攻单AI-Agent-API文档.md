@@ -380,17 +380,18 @@ pnpm start
 
 当前测试覆盖认证登出、客户画像生成、知识库接口、攻单路由契约和本地记录读写。PDF 导出属于浏览器端能力，应在具备浏览器环境的端到端测试中验证 Blob 文件头、下载文件名和报告内容。
 
-## 10. 安全与扩展建议
+## 10. P1 复盘与迁移接口说明
 
-目前诊断、聊天和知识库接口是公开路由；不要在这些接口中直接传递未经脱敏的客户敏感信息。若启用云端记录，应把 `gongdan.save/list/get` 置于明确的登录和权限策略之后，并补充团队、组织和记录共享边界。
+### 10.1 `gongdan.recap`
 
-建议后续统一 `Playbook`、`CustomerProfile` 和 `StoredRecord` 的共享类型，避免前后端分别维护近似但不完全一致的结构。若要开放给外部系统，建议在 tRPC 之外增加一层稳定的版本化 REST 或 OpenAPI 适配层，并为 AI 输出增加审计 ID、知识库版本和生成时间。
+`gongdan.recap` 是公开 mutation，用于将客户诊断、拜访反馈、异议结果和下一次目标转化为结构化作战卡。返回字段包括 `factualSummary`、`customerChange`、`currentBarrier`、`confidence`、`nextObjective`、`keyQuestions`、`recommendedActions`、`avoidActions`、`materialsToPrepare` 和 `followUpMessages`。
 
-## 参考文件
+`followUpMessages` 必须包含“关系维护型”“专业推进型”“决策确认型”三种风格，每项包含 `style` 和 `message`。接口使用严格 JSON Schema，缺失事实返回“待确认”，不得补造预算、效果、竞品或决策人信息。
 
-[1]: ../server/routers.ts "攻单 AI 服务端 tRPC 路由"
-[2]: ../client/src/lib/trpc.ts "前端 tRPC 客户端"
-[3]: ../shared/gongdanKnowledge.ts "分众攻单知识库与案例匹配"
-[4]: ../client/src/lib/localRecords.ts "浏览器本地记录模块"
-[5]: ../client/src/lib/customerProfile.ts "客户画像生成模块"
-[6]: ../package.json "项目脚本与依赖"
+### 10.2 本地记录版本 2
+
+`StoredRecord` 新增 `meetingResult`、`newSignals`、`nextGoal`、`recap` 和 `followUpMessage`。导出对象的 `version` 为 `2`，导入仍接受版本 1，并支持预览统计、冲突优先级和最近一次导入撤销。
+
+### 10.3 ICS 日历导出
+
+前端 `buildFollowUpCalendar(records)` 将含 `followUpDate` 的记录转换为全天 ICS 事件，支持批量和单条导出。

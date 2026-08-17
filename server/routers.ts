@@ -18,6 +18,38 @@ const clientInputSchema = z.object({
   background: z.string().max(8000).optional().default(""),
 });
 
+const recapInputSchema = z.object({
+  brandName: z.string().max(240).default(""),
+  industry: z.string().max(1200).default(""),
+  primaryType: z.string().max(120).default(""),
+  secondaryType: z.string().max(120).default(""),
+  diagnosis: z.string().max(4000).default(""),
+  strategy: z.string().max(5000).default(""),
+  visitFeedback: z.string().max(8000).default(""),
+  objectionOutcome: z.string().max(8000).default(""),
+  meetingResult: z.enum(["有明确意向", "继续评估", "暂缓", "失联"]).default("继续评估"),
+  newSignals: z.string().max(4000).default(""),
+  nextGoal: z.string().max(2000).default(""),
+});
+
+const recapSchema = {
+  type: "object",
+  properties: {
+    factualSummary: { type: "string" },
+    customerChange: { type: "string" },
+    currentBarrier: { type: "string" },
+    confidence: { type: "string", enum: ["高", "中", "低"] },
+    nextObjective: { type: "string" },
+    keyQuestions: { type: "array", items: { type: "string" } },
+    recommendedActions: { type: "array", items: { type: "string" } },
+    avoidActions: { type: "array", items: { type: "string" } },
+    materialsToPrepare: { type: "array", items: { type: "string" } },
+    followUpMessages: { type: "array", items: { type: "object", properties: { style: { type: "string", enum: ["关系维护型", "专业推进型", "决策确认型"] }, message: { type: "string" } }, required: ["style", "message"], additionalProperties: false } },
+  },
+  required: ["factualSummary", "customerChange", "currentBarrier", "confidence", "nextObjective", "keyQuestions", "recommendedActions", "avoidActions", "materialsToPrepare", "followUpMessages"],
+  additionalProperties: false,
+} as const;
+
 const playbookSchema = {
   type: "object",
   properties: {
@@ -74,6 +106,19 @@ export const appRouter = router({
         const secondaryType = String(parsed.secondaryType ?? "");
         return { ...parsed, matchedCases: getMatchedCases(primaryType, secondaryType) };
       } catch { throw new Error("AI 返回格式异常，请重试"); }
+    }),
+    recap: publicProcedure.input(recapInputSchema).mutation(async ({ input }) => {
+      const response = await invokeLLM({
+        model: "gpt-5-mini",
+        messages: [
+          { role: "system", content: `${SYSTEM_PROMPT}\n你现在执行拜访复盘。只使用销售提供的事实，不能补造预算、效果、竞品或决策人信息。若缺失请写“待确认”。必须分别生成三条跟进消息，风格严格为“关系维护型”“专业推进型”“决策确认型”。输出 JSON。` },
+          { role: "user", content: `请根据以下复盘信息生成下一次攻单作战卡：\n品牌：${input.brandName}\n行业：${input.industry}\n主类型：${input.primaryType}\n次类型：${input.secondaryType}\n原诊断：${input.diagnosis}\n原策略：${input.strategy}\n本次结果：${input.meetingResult}\n新增信号：${input.newSignals}\n拜访反馈：${input.visitFeedback}\n异议结果：${input.objectionOutcome}\n下一次目标：${input.nextGoal}` },
+        ],
+        response_format: { type: "json_schema", json_schema: { name: "gongdan_recap", strict: true, schema: recapSchema } },
+        reasoning: { effort: "low" },
+      });
+      const raw = textContent(response.choices?.[0]?.message?.content);
+      try { return JSON.parse(raw); } catch { throw new Error("复盘结果格式异常，请重试"); }
     }),
     chat: publicProcedure.input(z.object({ messages: z.array(chatMessageSchema).min(1).max(20) })).mutation(async ({ input }) => {
       const response = await invokeLLM({

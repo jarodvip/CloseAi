@@ -10,6 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { buildFollowUpSummary, exportLocalRecords, getFollowUpState, importLocalRecords, loadLocalRecords, saveLocalRecords, type StoredRecord } from "@/lib/localRecords";
 import { buildCustomerProfile, type CustomerProfile } from "@/lib/customerProfile";
+import { RecordsPanelV2 } from "@/components/RecordsPanelV2";
 import { ArrowRight, Bookmark, BrainCircuit, CheckCircle2, ChevronRight, CircleHelp, Clock3, Download, FileDown, FileText, LayoutGrid, ListChecks, Map, MessageCircle, Search, ShieldCheck, Sparkles, Target, UserRound } from "lucide-react";
 
 const navItems = [
@@ -87,7 +88,7 @@ export default function Home() {
         {section === "assistant" && <section><PageHeading eyebrow="AI 攻单助手" title="把客户背景，变成下一步动作" description="输入一段客户背景，AI 会基于内置知识库判断类型、匹配案例，并按‘听 / 认 / 比 / 算 / 定’组织建议。" />{playbook && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f1d0d4] bg-[#fff8f8] px-4 py-3"><div className="text-xs text-[#81525a]">当前诊断：<b>{form.brandName || "未命名品牌"}</b> · {playbook.primaryType}</div><Button size="sm" onClick={openAssistantWithContext} className="bg-[#c90019] hover:bg-[#a90015]">一键带入当前诊断</Button></div>}<AIChatBox messages={chatMessages} onSendMessage={sendChat} isLoading={chat.isPending} height={580} placeholder="例如：一家区域护肤品牌，南方很强，准备进入北上广深……" emptyStateMessage="先描述客户，再开始攻单" suggestedPrompts={["帮我诊断一家准备全国化的区域品牌", "客户说太贵了，怎么继续推进？", "给我一套品类开创者型的首面打法"]} /></section>}
         {section === "types" && <TypesPanel types={filteredTypes} search={search} setSearch={setSearch} activeType={playbook?.primaryType} />}
         {section === "objections" && <ObjectionsPanel objections={knowledgeQuery.data?.objections ?? []} form={form} playbook={playbook} />}
-        {section === "records" && <RecordsPanel records={records} onUpdate={updateRecord} onReplace={replaceRecords} />}
+        {section === "records" && <RecordsPanelV2 records={records} onUpdate={updateRecord} onReplace={replaceRecords} onExport={() => { const blob = new Blob([exportLocalRecords(records)], { type: "application/json;charset=utf-8" }); const href = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = href; link.download = `攻单客户记录-${new Date().toISOString().slice(0, 10)}.json`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(href); }} />}
       </main>
     </div>
   </div>;
