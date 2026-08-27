@@ -1,5 +1,8 @@
 """外部数据服务：摄取、检索、背调。所有文本入库前必经此处，保证来源可追溯。"""
+import logging
 from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 def split_into_chunks(text: str, max_chars: int = 500) -> List[str]:
@@ -246,9 +249,15 @@ BACKDOSSIER_PROMPT = """请联网调研以下客户，输出销售拜访用的�
 
 
 def run_backdossier(db: Session, customer) -> List[ResearchChunk]:
-    """联网生成客户背调报告并存库（source_type=research）"""
+    """联网生成客户背调报告并存库（source_type=research）；联网失败降级为空结果，不向调用方抛错"""
     prompt = BACKDOSSIER_PROMPT.format(name=customer.name, industry=customer.industry or "未知")
-    report = call_llm_with_search(prompt)
+    try:
+        report = call_llm_with_search(prompt)
+    except Exception as exc:
+        # 联网失败（超时/限流/上游 5xx 等）：宁缺毋滥，返回空列表而非编造
+        logger.error("客户背调生成失败 customer_id=%s：%s",
+                     getattr(customer, "id", None), exc, exc_info=True)
+        return []
     if not report:
         return []
     return ingest_text(db, report, source_type="research",
