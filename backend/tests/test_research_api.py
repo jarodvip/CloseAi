@@ -52,3 +52,10 @@ def test_delete_admin_only(tokens, seeded):
     assert r_admin.status_code == 200
     r_admin_again = client.delete(f"/api/v1/research/chunks/{cid}", headers={"authorization": f"Bearer {tokens['admin']}"})
     assert r_admin_again.status_code == 404
+
+
+def test_search_k_out_of_range_rejected(tokens, seeded):
+    # k 必须在 [1,50] 内：超界（如 -1）直接 422，防止 SQLite LIMIT -1 全库倾泻
+    r = client.get("/api/v1/research", params={"q": MARKER, "k": -1},
+                   headers={"authorization": f"Bearer {tokens['sales']}"})
+    assert r.status_code == 422

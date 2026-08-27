@@ -175,6 +175,46 @@ def search_research(
     return base.filter(ResearchChunk.content.ilike(like)).limit(k).all()
 
 
+def extract_readable_html(html: str) -> Tuple[str, str]:
+    """readability 提取正文；失败时降级为原始 HTML 去标签"""
+    title, text = "", html or ""
+    try:
+        from readability import Document as _Doc
+
+        doc = _Doc(html)
+        title = doc.short_title() or ""
+        text = doc.summary(html_partial=True)
+    except Exception:
+        pass
+    if "<" in text:
+        import re
+
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text)
+    return title, text.strip()
+
+
+def _http_get_raw(url: str):
+    import httpx
+
+    resp = httpx.get(url, timeout=15, follow_redirects=True,
+                     headers={"user-agent": "CloseAI-research-bot/0.1"})
+    resp.raise_for_status()
+    return resp
+
+
+def ingest_url(db: Session, url: str, *, industry: Optional[str] = None,
+               source_name: Optional[str] = None) -> List[ResearchChunk]:
+    """抓取内网页面 → 提取正文 → 分块入库"""
+    resp = _http_get_raw(url)
+    title, body = extract_readable_html(resp.text)
+    if not body:
+        return []
+    return ingest_text(db, body, source_type="web", title=title or url, url=url,
+                       source_name=source_name, industry=industry,
+                       fetched_at=datetime.utcnow())
+
+
 def chunk_dict(chunk: ResearchChunk) -> dict:
     """统一序列化，保证前端拿到的追溯字段稳定"""
     return {
