@@ -173,3 +173,20 @@ def search_research(
     # ILIKE 兜底
     like = f"%{query.strip()}%"
     return base.filter(ResearchChunk.content.ilike(like)).limit(k).all()
+
+
+def chunk_dict(chunk: ResearchChunk) -> dict:
+    """统一序列化，保证前端拿到的追溯字段稳定"""
+    return {
+        "id": chunk.id,
+        "source_type": chunk.source_type,
+        "title": chunk.title,
+        "url": chunk.url,
+        "source_name": chunk.source_name,
+        "industry": chunk.industry,
+        "customer_id": chunk.customer_id,
+        "content": (chunk.content or "")[:200],
+        "chunk_index": chunk.chunk_index,
+        "fetched_at": chunk.fetched_at.isoformat() if chunk.fetched_at else None,
+        "created_at": chunk.created_at.isoformat() if chunk.created_at else None,
+    }
