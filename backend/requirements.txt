@@ -1,0 +1,5 @@
+# 外部数据层新增依赖（存量依赖安装方式见 docs/项目初始化与运行.md）
+pypdf
+python-docx
+readability-lxml
+jieba
