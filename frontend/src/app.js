@@ -1,4 +1,4 @@
-const baseApi = 'http://127.0.0.1:8000';
+const baseApi = 'http://127.0.0.1:8002';
 let authToken = localStorage.getItem('access_token');
 let currentUser = null;
 let currentSessionId = null;
@@ -157,9 +157,17 @@ function setLoading(btnId, isLoading) {
 }
 
 function showPage(page) {
-  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(el => {
+    if (el.id !== 'workbench-page') el.classList.remove('active');
+  });
   const target = document.getElementById(page);
-  if (target) target.classList.add('active');
+  if (target) {
+    target.classList.add('active');
+    // 如果目标是 workbench-page 内部的页面，确保 workbench-page 可见
+    if (target.closest('#workbench-page')) {
+      document.getElementById('workbench-page').style.display = 'block';
+    }
+  }
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.page === page);
   });
@@ -1132,7 +1140,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.removeItem('access_token');
       showPage('login-page');
     } else {
-      showPage('workbench-page');
+      showPage('home-page');
+      document.getElementById('workbench-page').style.display = 'block';
       applyRoleVisibility();
       await loadOptions();
       await loadCustomers();
@@ -1157,7 +1166,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const data = await api('/api/v1/auth/login', { method: 'POST', body: JSON.stringify(payload) });
       authToken = data.access_token;
       localStorage.setItem('access_token', authToken);
-      showPage('workbench-page');
+      showPage('home-page');
+      document.getElementById('workbench-page').style.display = 'block';
       await refreshUserAndVisibility();
       await loadOptions();
       await loadCustomers();
