@@ -7,6 +7,7 @@ from app.core.domain.services.common import build_source_cards, build_system_pro
 from app.core.domain.services.customer_service import get_customer
 from app.core.domain.services.knowledge_service import get_customer_type_by_code, list_cases, list_evidence, list_scripts
 from app.core.domain.services.llm_service import generate_text
+from app.core.domain.services.research_service import collect_research_cards, cards_from_intel
 from app.models.chat import ChatSession, ChatMessage
 
 
@@ -63,17 +64,32 @@ def build_reply(db: Session, session_id: int, content: str) -> dict:
     chat_session = get_session(db, session_id)
     customer = get_customer(db, chat_session.customer_id) if chat_session and chat_session.customer_id else None
     context = _build_context(db, customer, history, content)
+    # 会中 RAG 注入：按客户名/行业两路检索研究块，命中才把资料块前置进提示词；
+    # 无命中时 prompt_for_llm 即原问题，行为与现状完全一致
+    hits = collect_research_cards(db, name=customer.name if customer else "",
+                                  industry=getattr(customer, "industry", None),
+                                  customer_id=getattr(customer, "id", None), k=3)
+    prompt_for_llm = content
+    if hits:
+        block = "\n".join(
+            f"[资料{i + 1}] {h.get('title')}（来源：{h.get('url') or h.get('source_name')}）\n{h.get('snippet')}"
+            for i, h in enumerate(hits)
+        )
+        prompt_for_llm = f"{content}\n\n以下是内部资料，回答时可引用并在结尾标注来源：\n{block}"
     llm_text = ""
     try:
-        llm_text = generate_text(content, system=build_system_prompt("chat", customer.primary_type if customer else "待判断", context.get("type_info"), context.get("evidence", []), customer=customer))
+        llm_text = generate_text(prompt_for_llm, system=build_system_prompt("chat", customer.primary_type if customer else "待判断", context.get("type_info"), context.get("evidence", []), customer=customer))
     except Exception:
         llm_text = ""
     reply_text = llm_text or _rule_reply(customer, content)
+    # 命中的研究块转成来源卡，追加到既有知识库卡之后（进 message.meta，
+    # 路由层据此填充响应顶层 source_cards，前端两条消费路径共用此键）
+    rag_cards = cards_from_intel(hits)
     meta = {
         "customer_name": customer.name if customer else None,
         "primary_type": customer.primary_type if customer else None,
         "evidence_text": context.get("evidence_text", ""),
-        "source_cards": context.get("source_cards", []),
+        "source_cards": context.get("source_cards", []) + rag_cards,
         "source_refs": context.get("source_refs", []),
     }
     message = create_message(db, session_id, {"role": "assistant", "content": reply_text, "meta": _encode_meta(meta)})
