@@ -203,11 +203,16 @@ def _http_get_raw(url: str):
     return resp
 
 
+def fetch_extract(url: str) -> Tuple[str, str]:
+    """抓取内网页面并提取（标题, 正文）。网络或解析异常向上抛出，由调用方决定降级策略"""
+    resp = _http_get_raw(url)
+    return extract_readable_html(resp.text)
+
+
 def ingest_url(db: Session, url: str, *, industry: Optional[str] = None,
                source_name: Optional[str] = None) -> List[ResearchChunk]:
     """抓取内网页面 → 提取正文 → 分块入库"""
-    resp = _http_get_raw(url)
-    title, body = extract_readable_html(resp.text)
+    title, body = fetch_extract(url)
     if not body:
         return []
     return ingest_text(db, body, source_type="web", title=title or url, url=url,

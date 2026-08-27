@@ -60,3 +60,17 @@ def test_import_url_requires_admin(admin_token):
     r = client.post("/api/v1/research/import-url", json={"url": "https://intra.example.com/x"},
                     headers={"authorization": f"Bearer {sales}"})
     assert r.status_code == 403
+
+
+def test_import_url_fetch_failure_returns_502(admin_token, monkeypatch):
+    # 离线模拟抓取失败（连接拒绝）：端点必须返回结构化 502 错误而非内部堆栈
+    import httpx
+
+    def _unreachable(url):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(research_service, "_http_get_raw", _unreachable)
+    r = client.post("/api/v1/research/import-url", json={"url": "https://intra.example.com/unreachable"},
+                    headers={"authorization": f"Bearer {admin_token}"})
+    assert r.status_code == 502
+    assert r.json()["detail"] == "页面抓取失败，请检查 URL 是否可达"
