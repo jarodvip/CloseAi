@@ -38,7 +38,7 @@ def tokenize_for_fts(text: str) -> str:
 
 from datetime import datetime
 
-from sqlalchemy import text as _sqltext
+from sqlalchemy import or_, text as _sqltext
 from sqlalchemy.orm import Session
 
 from app.models.research import ResearchChunk
@@ -150,7 +150,9 @@ def search_research(
     if industry:
         base = base.filter(ResearchChunk.industry == industry)
     if customer_id is not None:
-        base = base.filter(ResearchChunk.customer_id == customer_id)
+        # 纳入本客户分块与行业级(customer_id 为 NULL)分块；其他客户的私有分块仍被排除
+        base = base.filter(or_(ResearchChunk.customer_id == customer_id,
+                               ResearchChunk.customer_id.is_(None)))
     if _fts_enabled(db):
         # 每个 token 内部的双引号双写转义，避免构造出非法 MATCH 表达式
         quoted = " ".join('"%s"' % t.replace('"', '""') for t in tokenize_for_fts(query).split())
@@ -159,7 +161,7 @@ def search_research(
             "JOIN research_chunks rc ON rc.id = f.chunk_id "
             "WHERE research_chunks_fts MATCH :m "
             "AND (:i IS NULL OR rc.industry = :i) "
-            "AND (:cu IS NULL OR rc.customer_id = :cu) "
+            "AND (:cu IS NULL OR rc.customer_id = :cu OR rc.customer_id IS NULL) "
             "ORDER BY rank LIMIT :k"
         )
         try:

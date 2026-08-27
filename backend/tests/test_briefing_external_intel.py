@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.db.init_db import init_db
 from app.db.session import SessionLocal
-from app.core.domain.services.research_service import ingest_text, delete_chunk
+from app.core.domain.services.research_service import ingest_text, delete_chunk, search_research
 from app.core.domain.services.briefing_service import build_briefing
 from app.core.domain.services.customer_service import create_customer
 from app.schemas.customer import CustomerIn
@@ -14,6 +14,7 @@ from app.schemas.customer import CustomerIn
 client = TestClient(app)
 
 INTEL_MARK = "情报标记_xt88"
+IND_MARK = "行业标记_xi99"
 
 
 def _cleanup(db, cust=None, made_chunks=()):
@@ -51,6 +52,33 @@ def test_briefing_contains_external_intel(monkeypatch):
         # 卡片并入 llm_source_cards：label 应含"背调/资料"字样且 source 有值
         cards = payload.get("llm_source_cards") or []
         assert any(("背调" in (c.get("label") or "")) or ("资料" in (c.get("label") or "")) for c in cards)
+    finally:
+        _cleanup(db, cust=cust, made_chunks=made)
+        db.close()
+
+
+def test_briefing_includes_industry_level_chunk(monkeypatch):
+    """行业级 chunk（customer_id=NULL）应纳入客户简报的外部情报：按行业+客户检索的既定语义"""
+    init_db()
+    db = SessionLocal()
+    made = []
+    cust = None
+    try:
+        cust = create_customer(db, CustomerIn(name=f"行业情报客户_{IND_MARK}", industry="饮料"), owner_id=1)
+        # 行业级数据按设计 customer_id=NULL；「饮料」独立成词才能被 FTS 命中（jieba 不拆「饮料行业」）
+        made = ingest_text(db, f"{IND_MARK} 饮料 赛道集中度提升，头部品牌渠道下沉明显。",
+                           source_type="web", title=f"饮料 赛道观察报告 {IND_MARK}",
+                           url="https://example.com/beverage-report", source_name="行业研究内网",
+                           customer_id=None, industry="饮料")
+        # 单元断言：按客户检索时应同时命中本客户与行业级(NULL)分块
+        hit_ids = {c.id for c in search_research(db, "饮料", customer_id=cust.id)}
+        assert made[0].id in hit_ids
+        # 屏蔽真实 LLM，保证断言只针对外部情报管道
+        monkeypatch.setattr("app.core.domain.services.briefing_service.generate_text", lambda *a, **k: "模拟输出")
+        payload = build_briefing(db, cust.id)
+        assert isinstance(payload.get("external_intel"), list)
+        assert any(i.get("url") == "https://example.com/beverage-report" or IND_MARK in (i.get("title") or "")
+                   for i in payload["external_intel"])
     finally:
         _cleanup(db, cust=cust, made_chunks=made)
         db.close()
