@@ -260,15 +260,19 @@ async function loadCustomerDetail() {
         <td>${escapeHtml(item.pending_actions || '-')}</td>
       </tr>
     `).join('');
-    const briefingRows = (briefings.data || []).slice().reverse().map(item => `
+    const briefingRows = (briefings.data || []).slice().reverse().map(item => {
+      // 历史表格列宽紧张：外情只显计数徽标，点击进简报详情看全量
+      const intelCount = Array.isArray(item.external_intel) ? item.external_intel.length : 0;
+      return `
       <tr>
         <td>${escapeHtml(item.created_at?.slice(0, 19) || '-')}</td>
         <td>${escapeHtml(item.primary_type || '-')}</td>
         <td>${escapeHtml(item.focus || item.opening_line || '-')}</td>
         <td>${escapeHtml((item.recommended_cases || []).map(x => x.title).join('、') || '-')}</td>
-        <td>${sourceCardsHtml(item.llm_source_cards || [])}</td>
+        <td>${sourceCardsHtml(item.llm_source_cards || [])}${intelCount ? `<span class="intel-badge" onclick="openBriefing(${item.customer_id})">外情×${intelCount}</span>` : ''}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
     container.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h3 style="margin:0;font-size:18px;">${escapeHtml(customer.name || id)}</h3>
@@ -348,6 +352,15 @@ async function renderBriefing(customerId) {
   const data = await api(`/api/v1/customers/${customerId}/briefing?${sessionId}`, { method: 'POST' });
   const payload = data.data || {};
   const sourceCards = sourceCardsHtml(payload.llm_source_cards || []);
+  // 外部情报区块：有数据才渲染，不占空态版面
+  const intel = Array.isArray(payload.external_intel) ? payload.external_intel : [];
+  const intelHtml = intel.length ? `
+    <div class="card intel-block">
+      <div class="source-card-title">外部情报</div>
+      <ul class="source-list">
+        ${intel.map((i) => `<li>${escapeHtml(i.title || '')}${i.url ? ` · <a href="${escapeHtml(i.url)}" target="_blank" rel="noopener">${escapeHtml(i.source_name || '链接')}</a>` : ''}<div class="intel-snippet">${escapeHtml(i.snippet || '')}</div></li>`).join('')}
+      </ul>
+    </div>` : '';
   const container = document.getElementById('briefing-result');
   container.innerHTML = `
     <div class="result-block">
@@ -360,6 +373,7 @@ async function renderBriefing(customerId) {
       <p><strong>潜在异议：</strong>${escapeHtml((payload.potential_objections || []).join('；') || '-')}</p>
       <p><strong>推荐案例：</strong>${escapeHtml((payload.recommended_cases || []).map(x => x.title).join('、') || '-')}</p>
       ${sourceCards}
+      ${intelHtml}
       <p class="muted" style="font-size:12px; margin-top:8px;">LLM 输出：${escapeHtml((payload.llm_text || '未生成').slice(0, 200))}</p>
     </div>
   `;
@@ -433,6 +447,15 @@ function renderMeetingResult(payload) {
   const sourceCards = payload.llm_source_cards
     ? sourceCardsHtml(Array.isArray(payload.llm_source_cards) ? payload.llm_source_cards : JSON.parse(payload.llm_source_cards || '[]'))
     : '';
+  // 外部情报区块：简报响应才有该键，会中/会后 payload 无此键时自然不渲染
+  const intel = Array.isArray(payload.external_intel) ? payload.external_intel : [];
+  const intelHtml = intel.length ? `
+    <div class="card intel-block">
+      <div class="source-card-title">外部情报</div>
+      <ul class="source-list">
+        ${intel.map((i) => `<li>${escapeHtml(i.title || '')}${i.url ? ` · <a href="${escapeHtml(i.url)}" target="_blank" rel="noopener">${escapeHtml(i.source_name || '链接')}</a>` : ''}<div class="intel-snippet">${escapeHtml(i.snippet || '')}</div></li>`).join('')}
+      </ul>
+    </div>` : '';
   if (payload.opening_line !== undefined || payload.suggested_response !== undefined) {
     const line = payload.opening_line || payload.suggested_response || '-';
     container.innerHTML = `
@@ -445,6 +468,7 @@ function renderMeetingResult(payload) {
         <p><strong>建议话术：</strong>${escapeHtml(line)} <button class="copy-btn" data-copy="${escapeHtml(line)}">📋 复制</button></p>
         ${payload.llm_text ? `<p class="muted" style="font-size:12px; margin-top:8px;">LLM 输出：${escapeHtml(String(payload.llm_text).slice(0, 200))}</p>` : ''}
         ${sourceCards}
+        ${intelHtml}
       </div>
     `;
   } else {
@@ -527,6 +551,15 @@ async function quickAnalyze() {
     const out = data.data || {};
     const b = out.briefing || {};
     const sourceCards = sourceCardsHtml(b.llm_source_cards || []);
+    // 外部情报区块：有数据才渲染，不占空态版面
+    const intel = Array.isArray(b.external_intel) ? b.external_intel : [];
+    const intelHtml = intel.length ? `
+      <div class="card intel-block">
+        <div class="source-card-title">外部情报</div>
+        <ul class="source-list">
+          ${intel.map((i) => `<li>${escapeHtml(i.title || '')}${i.url ? ` · <a href="${escapeHtml(i.url)}" target="_blank" rel="noopener">${escapeHtml(i.source_name || '链接')}</a>` : ''}<div class="intel-snippet">${escapeHtml(i.snippet || '')}</div></li>`).join('')}
+        </ul>
+      </div>` : '';
     container.innerHTML = `
       <div class="result-block">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
@@ -541,6 +574,7 @@ async function quickAnalyze() {
         <p><strong>下一步：</strong>${escapeHtml(b.next_step || '-')}</p>
         <p><strong>潜在异议：</strong>${escapeHtml((b.potential_objections || []).join('；') || '-')}</p>
         ${sourceCards}
+        ${intelHtml}
       </div>
     `;
     await loadCustomers();
