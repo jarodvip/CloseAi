@@ -120,6 +120,25 @@ function sourceCardsHtml(cards = []) {
   return `<div class="source-card"><div class="source-card-title">引用来源</div><ul class="source-list source-list--compact">${items}</ul></div>`;
 }
 
+// 外部情报区块：有数据才渲染；仅 http(s) 链接可点击（协议白名单，防 javascript: 等危险 scheme）
+function intelBlockHtml(intel) {
+  if (!Array.isArray(intel) || !intel.length) return '';
+  const items = intel.map((i) => {
+    const url = String(i.url || '');
+    const link = /^https?:\/\//i.test(url)
+      ? ` · <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(i.source_name || '链接')}</a>`
+      : '';
+    return `<li>${escapeHtml(i.title || '')}${link}<div class="intel-snippet">${escapeHtml(i.snippet || '')}</div></li>`;
+  }).join('');
+  return `
+  <div class="card intel-block">
+    <div class="source-card-title">外部情报</div>
+    <ul class="source-list">
+      ${items}
+    </ul>
+  </div>`;
+}
+
 function copyText(text) {
   navigator.clipboard.writeText(text).catch(() => {});
   showToast('📋 已复制到剪贴板', 'success');
@@ -353,14 +372,7 @@ async function renderBriefing(customerId) {
   const payload = data.data || {};
   const sourceCards = sourceCardsHtml(payload.llm_source_cards || []);
   // 外部情报区块：有数据才渲染，不占空态版面
-  const intel = Array.isArray(payload.external_intel) ? payload.external_intel : [];
-  const intelHtml = intel.length ? `
-    <div class="card intel-block">
-      <div class="source-card-title">外部情报</div>
-      <ul class="source-list">
-        ${intel.map((i) => `<li>${escapeHtml(i.title || '')}${i.url ? ` · <a href="${escapeHtml(i.url)}" target="_blank" rel="noopener">${escapeHtml(i.source_name || '链接')}</a>` : ''}<div class="intel-snippet">${escapeHtml(i.snippet || '')}</div></li>`).join('')}
-      </ul>
-    </div>` : '';
+  const intelHtml = intelBlockHtml(payload.external_intel);
   const container = document.getElementById('briefing-result');
   container.innerHTML = `
     <div class="result-block">
@@ -448,14 +460,7 @@ function renderMeetingResult(payload) {
     ? sourceCardsHtml(Array.isArray(payload.llm_source_cards) ? payload.llm_source_cards : JSON.parse(payload.llm_source_cards || '[]'))
     : '';
   // 外部情报区块：简报响应才有该键，会中/会后 payload 无此键时自然不渲染
-  const intel = Array.isArray(payload.external_intel) ? payload.external_intel : [];
-  const intelHtml = intel.length ? `
-    <div class="card intel-block">
-      <div class="source-card-title">外部情报</div>
-      <ul class="source-list">
-        ${intel.map((i) => `<li>${escapeHtml(i.title || '')}${i.url ? ` · <a href="${escapeHtml(i.url)}" target="_blank" rel="noopener">${escapeHtml(i.source_name || '链接')}</a>` : ''}<div class="intel-snippet">${escapeHtml(i.snippet || '')}</div></li>`).join('')}
-      </ul>
-    </div>` : '';
+  const intelHtml = intelBlockHtml(payload.external_intel);
   if (payload.opening_line !== undefined || payload.suggested_response !== undefined) {
     const line = payload.opening_line || payload.suggested_response || '-';
     container.innerHTML = `
@@ -552,14 +557,7 @@ async function quickAnalyze() {
     const b = out.briefing || {};
     const sourceCards = sourceCardsHtml(b.llm_source_cards || []);
     // 外部情报区块：有数据才渲染，不占空态版面
-    const intel = Array.isArray(b.external_intel) ? b.external_intel : [];
-    const intelHtml = intel.length ? `
-      <div class="card intel-block">
-        <div class="source-card-title">外部情报</div>
-        <ul class="source-list">
-          ${intel.map((i) => `<li>${escapeHtml(i.title || '')}${i.url ? ` · <a href="${escapeHtml(i.url)}" target="_blank" rel="noopener">${escapeHtml(i.source_name || '链接')}</a>` : ''}<div class="intel-snippet">${escapeHtml(i.snippet || '')}</div></li>`).join('')}
-        </ul>
-      </div>` : '';
+    const intelHtml = intelBlockHtml(b.external_intel);
     container.innerHTML = `
       <div class="result-block">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
