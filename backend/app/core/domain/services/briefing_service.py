@@ -7,6 +7,7 @@ from app.core.domain.services.common import build_source_cards_for_cases, build_
 from app.core.domain.services.customer_service import get_customer
 from app.core.domain.services.knowledge_service import get_customer_type_by_code, list_cases, list_evidence
 from app.core.domain.services.llm_service import generate_text
+from app.core.domain.services.research_service import cards_from_intel, collect_research_cards
 from app.models.briefing import BriefingHistory
 
 def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = None) -> Dict[str, Any]:
@@ -36,6 +37,12 @@ def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = No
         llm_text = ""
     source_cards = build_source_cards_for_cases(type_info, cases, evidence)
     source_refs = [card["source"] for card in source_cards]
+    # 外部情报：按行业+客户检索研究分块，仅存在于响应态（BriefingHistory 白名单会自动跳过 external_intel）
+    external_intel = collect_research_cards(
+        db, name=customer.name, industry=customer.industry,
+        customer_id=customer.id,
+    )
+    external_cards = cards_from_intel(external_intel)
     payload = {
         "customer_id": customer_id,
         "session_id": session_id,
@@ -51,10 +58,13 @@ def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = No
         "next_step": type_info.next_step if type_info else "建议先做1个核心城市1个月品牌认知测试方案。",
         "source_refs": source_refs,
         "llm_text": llm_text or None,
-        "llm_source_cards": source_cards,
+        "external_intel": external_intel,
+        "llm_source_cards": source_cards + external_cards,
         "created_at": datetime.now().isoformat(),
     }
     db_payload = {**payload}
+    # 持久化仅保留内部来源卡：外部情报卡与 external_intel 同属响应态，读取时由 list_briefings 实时补算，避免叠加重复
+    db_payload["llm_source_cards"] = _json.dumps(source_cards, ensure_ascii=False)
     for key in ["recommended_cases", "potential_objections", "source_refs", "llm_source_cards"]:
         if isinstance(db_payload.get(key), (list, dict)):
             db_payload[key] = _json.dumps(db_payload[key], ensure_ascii=False)
@@ -84,8 +94,12 @@ def list_briefings(db: Session, customer_id: int, limit: int = 20) -> Dict[str, 
         .limit(limit)
         .all()
     )
-    return {"code": 0, "message": "ok", "data": [
-        {
+    data = []
+    for item in items:
+        # 外部情报不入库：每次读取按当前客户名实时补算，不迁移表结构
+        intel = collect_research_cards(db, name=item.customer_name, customer_id=item.customer_id)
+        stored_cards = _safe_json(item.llm_source_cards, default=[])
+        data.append({
             "id": item.id,
             "customer_id": item.customer_id,
             "session_id": item.session_id,
@@ -101,11 +115,11 @@ def list_briefings(db: Session, customer_id: int, limit: int = 20) -> Dict[str, 
             "potential_objections": _safe_json(item.potential_objections, default=[]),
             "source_refs": _safe_json(item.source_refs, default=[]),
             "llm_text": item.llm_text,
-            "llm_source_cards": _safe_json(item.llm_source_cards, default=[]),
+            "external_intel": intel,
+            "llm_source_cards": stored_cards + cards_from_intel(intel),
             "created_at": item.created_at,
-        }
-        for item in items
-    ]}
+        })
+    return {"code": 0, "message": "ok", "data": data}
 
 def _safe_json(value, default=None):
     if value is None:

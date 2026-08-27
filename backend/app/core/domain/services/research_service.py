@@ -241,6 +241,43 @@ def chunk_dict(chunk: ResearchChunk) -> dict:
     }
 
 
+def collect_research_cards(db: Session, *, name: str = "", industry: Optional[str] = None,
+                           customer_id: Optional[int] = None, k: int = 5) -> List[Dict[str, object]]:
+    """为简报/chat 汇总外部情报：cards 供来源卡渲染，payload 含 snippet 片段"""
+    payload: List[Dict[str, object]] = []
+    seen: set = set()
+    # FTS 为全 token AND 匹配：名称+行业拼成整串查询时，正文缺任一 token 即整体落空，
+    # 故拆成"名称"与"行业"两路检索再按 id 去重合并，召回更稳
+    queries = [q for q in [name.strip() if name else "", industry or ""] if q]
+    for q in queries:
+        for hit in search_research(db, q, industry=None, customer_id=customer_id, k=k):
+            if hit.id in seen:
+                continue
+            seen.add(hit.id)
+            payload.append({
+                "id": hit.id,
+                "title": hit.title,
+                "url": hit.url,
+                "source_name": hit.source_name,
+                "source_type": hit.source_type,
+                "snippet": (hit.content or "")[:120],
+            })
+    return payload[:k]
+
+
+def cards_from_intel(intel: List[Dict[str, object]]) -> List[Dict[str, Optional[str]]]:
+    """转成与 common.build_source_cards 一致的卡片形状，前端零改动复用"""
+    cards = []
+    for i in intel:
+        # source 兜底到标题：历史/手工入库的分块可能同时缺失 url 与 source_name
+        src = i.get("url") or i.get("source_name") or i.get("title") or ""
+        if not src:
+            continue
+        label = "背调资料" if i.get("source_type") == "research" else "参考资料"
+        cards.append({"source": src, "label": label, "detail": i.get("snippet"), "scene": i.get("title")})
+    return cards
+
+
 BACKDOSSIER_PROMPT = """请联网调研以下客户，输出销售拜访用的背景调查简报。
 客户名称：{name}
 所属行业：{industry}
