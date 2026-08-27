@@ -64,3 +64,40 @@ def test_delete_chunk_removes_row_and_fts():
         assert delete_chunk(db, cid) is False
     finally:
         db.close()
+
+
+def test_search_with_quote_token_falls_back():
+    """查询 token 内含 ASCII 双引号不得抛异常：应正常命中或安全落入 ILIKE 兜底"""
+    db = _db()
+    try:
+        ensure_fts(db)
+        made = ingest_text(db, f"{MARKER} 引号健壮性验证出现奶茶与品牌", source_type="doc", industry="引号测试")
+        try:
+            # 正文含引号字符的复合查询不抛异常且有确定行为（列表结果）
+            hits = search_research(db, '包含"引号的奶茶查询', k=10)
+            assert isinstance(hits, list)
+            # 纯引号 token 同样不抛
+            assert isinstance(search_research(db, '"', k=10), list)
+        finally:
+            delete_chunk(db, made[0].id)
+    finally:
+        db.close()
+
+
+def test_search_preserves_relevance_order():
+    """FTS 命中多块时返回顺序必须保持相关性（rank）次序，而非 IN 的无序结果"""
+    db = _db()
+    try:
+        ensure_fts(db)
+        # 用同一隔离 industry 过滤，避免开发库历史数据干扰；高相关块重复关键词密度明显更高
+        low = ingest_text(db, "顺带提了一下奶茶和品牌的杂谈内容", source_type="doc", industry="排名隔离业")[0]
+        high = ingest_text(db, "奶茶品牌奶茶品牌奶茶品牌 核心论述奶茶品牌增长打法", source_type="doc", industry="排名隔离业")[0]
+        try:
+            hits = search_research(db, "奶茶 品牌", industry="排名隔离业", k=10)
+            assert {h.id for h in hits} == {high.id, low.id}
+            assert hits[0].id == high.id
+        finally:
+            delete_chunk(db, low.id)
+            delete_chunk(db, high.id)
+    finally:
+        db.close()

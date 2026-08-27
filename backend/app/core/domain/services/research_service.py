@@ -148,7 +148,8 @@ def search_research(
     if customer_id is not None:
         base = base.filter(ResearchChunk.customer_id == customer_id)
     if _fts_enabled(db):
-        quoted = " ".join(f'"{t}"' for t in tokenize_for_fts(query).split())
+        # 每个 token 内部的双引号双写转义，避免构造出非法 MATCH 表达式
+        quoted = " ".join('"%s"' % t.replace('"', '""') for t in tokenize_for_fts(query).split())
         sql = _sqltext(
             "SELECT rc.* FROM research_chunks_fts f "
             "JOIN research_chunks rc ON rc.id = f.chunk_id "
@@ -157,11 +158,18 @@ def search_research(
             "AND (:cu IS NULL OR rc.customer_id = :cu) "
             "ORDER BY rank LIMIT :k"
         )
-        rows = db.execute(sql, {"m": quoted, "i": industry, "cu": customer_id, "k": k}).fetchall()
-        ids = [row[0] for row in rows]
-        if not ids:
-            return []
-        return base.filter(ResearchChunk.id.in_(ids)).all()
+        try:
+            rows = db.execute(sql, {"m": quoted, "i": industry, "cu": customer_id, "k": k}).fetchall()
+        except Exception:
+            # FTS 查询异常（如无法解析的表达式）时回滚并落入下方 ILIKE 兜底，不让异常穿透
+            db.rollback()
+        else:
+            ids = [row[0] for row in rows]
+            if not ids:
+                return []
+            # 用映射按 rank 次序重排，规避 SQL IN 无序保证
+            chunks_by_id = {c.id: c for c in base.filter(ResearchChunk.id.in_(ids)).all()}
+            return [chunks_by_id[i] for i in ids if i in chunks_by_id]
     # ILIKE 兜底
     like = f"%{query.strip()}%"
     return base.filter(ResearchChunk.content.ilike(like)).limit(k).all()
