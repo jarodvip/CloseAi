@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "gpt-4o-mini"
     LLM_TIMEOUT: int = 30
+    LLM_SEARCH_PAYLOAD: str = ""  # 联网参数 JSON 串（内部API语义不同，经环境变量注入后整体 merge 进请求体；留空=不联网）
 
     # 数据库配置
     DATABASE_URL: str = "sqlite:///./sales_agent.db"
