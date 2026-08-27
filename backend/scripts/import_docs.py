@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-from app.db.session import SessionLocal  # noqa: E402
+from app.db.session import SessionLocal, engine  # noqa: E402
 from app.core.domain.services.research_service import ingest_text  # noqa: E402
 
 
@@ -44,9 +44,10 @@ def main(argv=None):
     parser.add_argument("path", help="文件或目录")
     parser.add_argument("--industry", default=None, help="行业标签")
     parser.add_argument("--source-name", dest="source_name", default=None, help="来源名称")
-    parser.add_argument("--max-chars", type=int, default=500)
     args = parser.parse_args(argv)
 
+    # 直连写库前打印目标库路径：让误跑环境（生产库/测试库混淆）一眼可见
+    print(f"[db] 目标数据库: {engine.url}")
     root = Path(args.path)
     files = sorted(root.rglob("*")) if root.is_dir() else [root]
     total = 0
@@ -59,9 +60,15 @@ def main(argv=None):
             text = parse_any(f)
             if not text:
                 continue
-            made = ingest_text(db, text, source_type="doc", title=f.stem,
-                               source_name=args.source_name or f.parent.name,
-                               industry=args.industry)
+            try:
+                made = ingest_text(db, text, source_type="doc", title=f.stem,
+                                   source_name=args.source_name or f.parent.name,
+                                   industry=args.industry)
+            except Exception as exc:
+                # 入库抛错同样只告警不中断整批；先回滚失败事务保证后续文件可继续写库
+                db.rollback()
+                print(f"[warn] 入库失败: {f.name} ({exc})")
+                continue
             total += len(made)
             ok_files += 1
             print(f"[ok] {f.name}: {len(made)} chunks")
