@@ -44,4 +44,6 @@ def call_llm_with_search(prompt: str, system: Optional[str] = None) -> str:
             extra = json.loads(LLM_SEARCH_PAYLOAD)
         except Exception:
             extra = {}
+        if not isinstance(extra, dict):
+            extra = {}  # 合法但非对象的 JSON（如 true）按未配置处理
     return generate_text(prompt, system=system, extra_payload=extra or None)

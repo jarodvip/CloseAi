@@ -1,6 +1,4 @@
 # backend/tests/test_llm_search_adapter.py
-import json
-
 from app.core.domain.services import llm_service
 
 
@@ -51,3 +49,21 @@ def test_call_llm_without_config_falls_back(monkeypatch):
     monkeypatch.setattr(llm_service, "LLM_SEARCH_PAYLOAD", "")
     monkeypatch.setattr(llm_service, "generate_text", lambda *a, **k: "plain")
     assert llm_service.call_llm_with_search("q") == "plain"
+
+
+def test_call_llm_with_invalid_json_falls_back(monkeypatch):
+    # 非法 JSON 应降级为普通生成，不抛错、不带任何扩展字段
+    monkeypatch.setattr(llm_service.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(llm_service, "LLM_SEARCH_PAYLOAD", '{"enable_search":')
+    out = llm_service.call_llm_with_search("q")
+    assert out == "联网结果"
+    assert "enable_search" not in _FakeClient.last_payload
+
+
+def test_call_llm_with_non_dict_json_falls_back(monkeypatch):
+    # 合法但非对象的 JSON（如 true）同样应降级，不抛错、请求体只有基础字段
+    monkeypatch.setattr(llm_service.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(llm_service, "LLM_SEARCH_PAYLOAD", "true")
+    out = llm_service.call_llm_with_search("q")
+    assert out == "联网结果"
+    assert set(_FakeClient.last_payload.keys()) == {"model", "messages", "temperature"}
