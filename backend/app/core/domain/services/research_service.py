@@ -39,6 +39,7 @@ from sqlalchemy import text as _sqltext
 from sqlalchemy.orm import Session
 
 from app.models.research import ResearchChunk
+from app.core.domain.services.llm_service import call_llm_with_search  # 模块级绑定：测试可 patch 本模块属性拦截联网调用
 
 _FTS_DDL = """
 CREATE VIRTUAL TABLE IF NOT EXISTS research_chunks_fts USING fts5(
@@ -235,3 +236,24 @@ def chunk_dict(chunk: ResearchChunk) -> dict:
         "fetched_at": chunk.fetched_at.isoformat() if chunk.fetched_at else None,
         "created_at": chunk.created_at.isoformat() if chunk.created_at else None,
     }
+
+
+BACKDOSSIER_PROMPT = """请联网调研以下客户，输出销售拜访用的背景调查简报。
+客户名称：{name}
+所属行业：{industry}
+要求覆盖：主营业务与规模、近半年动态（融资/新品/组织变动）、营销与广告投放现状、可能切入的业务痛点。
+不确定的信息必须标注"待确认"，不得编造。"""
+
+
+def run_backdossier(db: Session, customer) -> List[ResearchChunk]:
+    """联网生成客户背调报告并存库（source_type=research）"""
+    prompt = BACKDOSSIER_PROMPT.format(name=customer.name, industry=customer.industry or "未知")
+    report = call_llm_with_search(prompt)
+    if not report:
+        return []
+    return ingest_text(db, report, source_type="research",
+                       title=f"{customer.name} 背调报告",
+                       source_name="LLM联网调研",
+                       industry=customer.industry,
+                       customer_id=getattr(customer, "id", None),
+                       fetched_at=datetime.utcnow())

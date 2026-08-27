@@ -5,9 +5,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_db, require_user, require_admin
+from app.core.deps import get_db, require_user, require_admin, assert_owner
 from app.core.domain.services.research_service import chunk_dict, delete_chunk, search_research
 from app.core.domain.services.research_service import fetch_extract, ingest_text
+from app.core.domain.services.customer_service import get_customer
+from app.core.domain.services.research_service import run_backdossier
 from app.schemas.research import ImportUrlIn
 
 logger = logging.getLogger(__name__)
@@ -42,4 +44,17 @@ def import_url(payload: ImportUrlIn, db: Session = Depends(get_db), user: dict =
     made = ingest_text(db, body, source_type="web", title=title or str(payload.url),
                        url=str(payload.url), industry=payload.industry,
                        source_name=payload.source_name, fetched_at=datetime.utcnow())
+    return {"code": 0, "message": "ok", "data": [chunk_dict(c) for c in made]}
+
+
+customer_router = APIRouter()  # 第二个实例，注册到 /api/v1/customers 前缀
+
+
+@customer_router.post("/{customer_id}/research/refresh")
+def refresh_research(customer_id: int, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    assert_owner(db, customer_id, user)
+    customer = get_customer(db, customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="customer not found")
+    made = run_backdossier(db, customer)
     return {"code": 0, "message": "ok", "data": [chunk_dict(c) for c in made]}

@@ -10,6 +10,7 @@ from app.api.v1.routes.chat import router as chat_router
 from app.api.v1.routes.analyze import router as analyze_router
 from app.api.v1.routes.dashboard import router as dashboard_router
 from app.api.v1.routes.research import router as research_router
+from app.api.v1.routes.research import customer_router as research_customer_router
 
 
 main_router = APIRouter()
@@ -24,3 +25,4 @@ main_router.include_router(chat_router, prefix="/api/v1/chat", tags=["chat"])
 main_router.include_router(analyze_router, prefix="/api/v1", tags=["analyze"])
 main_router.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["dashboard"])
 main_router.include_router(research_router, prefix="/api/v1/research", tags=["research"])
+main_router.include_router(research_customer_router, prefix="/api/v1/customers", tags=["research"])
