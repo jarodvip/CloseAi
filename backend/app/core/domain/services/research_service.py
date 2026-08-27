@@ -31,3 +31,137 @@ def tokenize_for_fts(text: str) -> str:
 
     jieba.setLogLevel(60)  # 关闭构建日志刷屏
     return " ".join(jieba.cut(text or ""))
+
+
+from datetime import datetime
+
+from sqlalchemy import text as _sqltext
+from sqlalchemy.orm import Session
+
+from app.models.research import ResearchChunk
+
+_FTS_DDL = """
+CREATE VIRTUAL TABLE IF NOT EXISTS research_chunks_fts USING fts5(
+    chunk_id UNINDEXED, title, body
+)
+"""
+
+
+def ensure_fts(db: Session) -> bool:
+    """创建 FTS5 虚表（幂等）。不支持 FTS5 的 SQLite 构建返回 False，检索走 ILIKE 兜底"""
+    try:
+        db.execute(_sqltext(_FTS_DDL))
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        return False
+
+
+def _fts_enabled(db: Session) -> bool:
+    try:
+        db.execute(_sqltext("SELECT 1 FROM research_chunks_fts LIMIT 1"))
+        return True
+    except Exception:
+        return ensure_fts(db)
+
+
+def _write_fts(db: Session, chunk: ResearchChunk) -> None:
+    db.execute(
+        _sqltext(
+            "INSERT INTO research_chunks_fts(chunk_id, title, body) VALUES (:c, :t, :b)"
+        ),
+        {
+            "c": chunk.id,
+            "t": tokenize_for_fts(chunk.title or ""),
+            "b": tokenize_for_fts(chunk.content or ""),
+        },
+    )
+
+
+def ingest_text(
+    db: Session,
+    content: str,
+    *,
+    source_type: str,
+    title: Optional[str] = None,
+    url: Optional[str] = None,
+    source_name: Optional[str] = None,
+    industry: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    fetched_at=None,
+) -> List[ResearchChunk]:
+    """分块入库并同步 FTS 索引。所有来源统一走这里"""
+    pieces = split_into_chunks(content)
+    now = fetched_at or datetime.utcnow()
+    made: List[ResearchChunk] = []
+    for idx, piece in enumerate(pieces):
+        chunk = ResearchChunk(
+            source_type=source_type,
+            title=title,
+            url=url,
+            source_name=source_name,
+            industry=industry,
+            customer_id=customer_id,
+            content=piece,
+            chunk_index=idx,
+            fetched_at=now,
+        )
+        db.add(chunk)
+        db.commit()
+        db.refresh(chunk)
+        if _fts_enabled(db):
+            _write_fts(db, chunk)
+            db.commit()
+        made.append(chunk)
+    return made
+
+
+def delete_chunk(db: Session, chunk_id: int) -> bool:
+    chunk = db.query(ResearchChunk).filter(ResearchChunk.id == chunk_id).first()
+    if not chunk:
+        return False
+    if _fts_enabled(db):
+        db.execute(
+            _sqltext("DELETE FROM research_chunks_fts WHERE chunk_id = :c"),
+            {"c": chunk_id},
+        )
+    db.delete(chunk)
+    db.commit()
+    return True
+
+
+def search_research(
+    db: Session,
+    query: str,
+    *,
+    industry: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    k: int = 5,
+) -> List[ResearchChunk]:
+    """FTS5 全文检索；不可用时退化为 ILIKE。过滤条件按需叠加"""
+    if not query or not query.strip():
+        return []
+    base = db.query(ResearchChunk)
+    if industry:
+        base = base.filter(ResearchChunk.industry == industry)
+    if customer_id is not None:
+        base = base.filter(ResearchChunk.customer_id == customer_id)
+    if _fts_enabled(db):
+        quoted = " ".join(f'"{t}"' for t in tokenize_for_fts(query).split())
+        sql = _sqltext(
+            "SELECT rc.* FROM research_chunks_fts f "
+            "JOIN research_chunks rc ON rc.id = f.chunk_id "
+            "WHERE research_chunks_fts MATCH :m "
+            "AND (:i IS NULL OR rc.industry = :i) "
+            "AND (:cu IS NULL OR rc.customer_id = :cu) "
+            "ORDER BY rank LIMIT :k"
+        )
+        rows = db.execute(sql, {"m": quoted, "i": industry, "cu": customer_id, "k": k}).fetchall()
+        ids = [row[0] for row in rows]
+        if not ids:
+            return []
+        return base.filter(ResearchChunk.id.in_(ids)).all()
+    # ILIKE 兜底
+    like = f"%{query.strip()}%"
+    return base.filter(ResearchChunk.content.ilike(like)).limit(k).all()

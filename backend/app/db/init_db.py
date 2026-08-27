@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.knowledge import CustomerTypeKnowledge, Case, Script, Evidence
 from app.models.research import ResearchChunk  # noqa: F401 显式导入确保 create_all 建表
 from app.core.domain.services.auth_service import create_user
+from app.core.domain.services.research_service import ensure_fts
 
 DATA_DIR = ROOT / "data" / "knowledge"
 
@@ -42,6 +43,7 @@ def _bulk_insert(db: Session, model, records: list, unique_field: str = None):
 
 def init_db():
     Base.metadata.create_all(bind=engine, checkfirst=True)
+    ensure_fts(Session(bind=engine))  # 启动时建 FTS5 虚表；不支持时静默退化为 ILIKE
     db = Session(bind=engine)
     try:
         if not db.query(User).filter(User.username == "admin").first():
