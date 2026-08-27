@@ -144,6 +144,7 @@ def search_research(
     k: int = 5,
 ) -> List[ResearchChunk]:
     """FTS5 全文检索；不可用时退化为 ILIKE。过滤条件按需叠加"""
+    industry = industry or None  # 空串归一为 None，保证 FTS/ILIKE 两条路径过滤语义一致
     if not query or not query.strip():
         return []
     base = db.query(ResearchChunk)

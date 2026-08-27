@@ -43,8 +43,8 @@ def _bulk_insert(db: Session, model, records: list, unique_field: str = None):
 
 def init_db():
     Base.metadata.create_all(bind=engine, checkfirst=True)
-    ensure_fts(Session(bind=engine))  # 启动时建 FTS5 虚表；不支持时静默退化为 ILIKE
     db = Session(bind=engine)
+    ensure_fts(db)  # 启动时建 FTS5 虚表；不支持时静默退化为 ILIKE
     try:
         if not db.query(User).filter(User.username == "admin").first():
             create_user(db, "admin", "admin123", role="admin")

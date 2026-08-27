@@ -10,6 +10,7 @@ from app.core.domain.services.research_service import (
 )
 
 MARKER = "青栀气泡水_九乘七唯一标记"
+ISO_MARK = "隔离标记_iso77"
 
 
 def _db() -> Session:
@@ -100,4 +101,34 @@ def test_search_preserves_relevance_order():
             delete_chunk(db, low.id)
             delete_chunk(db, high.id)
     finally:
+        db.close()
+
+
+def test_scoped_search_excludes_other_customers_chunks(monkeypatch):
+    """按客户检索的隔离语义：行业级(customer_id=NULL)块纳入，他人私有块排除；FTS 与 ILIKE 两条路径必须一致"""
+    db = _db()
+    chunk_mine = chunk_other = None
+    try:
+        ensure_fts(db)
+        # 「奶茶」独立成词才能被 FTS 命中（参考既有用例写法）
+        chunk_mine = ingest_text(db, f"{ISO_MARK} 奶茶 赛道隔离块，行业级共享。",
+                                 source_type="doc", title=f"{ISO_MARK}_行业级",
+                                 industry="隔离行业", customer_id=None)[0]
+        chunk_other = ingest_text(db, f"{ISO_MARK} 奶茶 赛道隔离块，他人私有。",
+                                  source_type="research", title=f"{ISO_MARK}_私有",
+                                  industry="隔离行业", customer_id=999999)[0]
+        # FTS 路径：行业级块被纳入，他人(999999)私有块必须被排除
+        hit_ids = {h.id for h in search_research(db, "奶茶", customer_id=123456, k=20)}
+        assert chunk_mine.id in hit_ids
+        assert chunk_other.id not in hit_ids
+        # ILIKE 兜底路径：强制关闭 FTS 后隔离语义必须一致
+        monkeypatch.setattr("app.core.domain.services.research_service._fts_enabled", lambda db: False)
+        hit_ids = {h.id for h in search_research(db, "奶茶", customer_id=123456, k=20)}
+        assert chunk_mine.id in hit_ids
+        assert chunk_other.id not in hit_ids
+    finally:
+        monkeypatch.undo()  # 先恢复 FTS 开关，确保 delete_chunk 同步清掉 FTS 索引行
+        for c in (chunk_mine, chunk_other):
+            if c is not None:
+                delete_chunk(db, c.id)
         db.close()

@@ -35,7 +35,7 @@ def test_search_requires_login(seeded):
 
 def test_search_hit(tokens, seeded):
     r = client.get("/api/v1/research", params={"q": MARKER.split()[0], "industry": "饮料"},
-                   headers={"authorization": f"Bearer {tokens['sales']}"})
+                   headers={"authorization": f"Bearer {tokens['admin']}"})
     assert r.status_code == 200
     body = r.json()
     assert body["code"] == 0
@@ -57,5 +57,12 @@ def test_delete_admin_only(tokens, seeded):
 def test_search_k_out_of_range_rejected(tokens, seeded):
     # k 必须在 [1,50] 内：超界（如 -1）直接 422，防止 SQLite LIMIT -1 全库倾泻
     r = client.get("/api/v1/research", params={"q": MARKER, "k": -1},
-                   headers={"authorization": f"Bearer {tokens['sales']}"})
+                   headers={"authorization": f"Bearer {tokens['admin']}"})
     assert r.status_code == 422
+
+
+def test_search_requires_admin(tokens, seeded):
+    # 检索端点收为管理端调试工具：普通用户（sales）一律 403，防止越权读取他人客户背调分块
+    r = client.get("/api/v1/research", params={"q": MARKER},
+                   headers={"authorization": f"Bearer {tokens['sales']}"})
+    assert r.status_code == 403

@@ -20,7 +20,7 @@ router = APIRouter()
 @router.get("")
 def search(q: str = "", industry: Optional[str] = None, customer_id: Optional[int] = None,
            k: int = Query(5, ge=1, le=50), db: Session = Depends(get_db),
-           user: dict = Depends(require_user)):
+           user: dict = Depends(require_admin)):
     data = [chunk_dict(c) for c in search_research(db, q, industry=industry, customer_id=customer_id, k=k)]
     return {"code": 0, "message": "ok", "data": data}
 

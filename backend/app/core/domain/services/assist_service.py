@@ -4,6 +4,7 @@ from app.core.domain.services.common import build_source_cards, build_system_pro
 from app.core.domain.services.customer_service import get_customer
 from app.core.domain.services.knowledge_service import get_customer_type_by_code, list_evidence, list_scripts
 from app.core.domain.services.llm_service import generate_text
+from app.core.domain.services.research_service import cards_from_intel, collect_research_cards
 
 
 def build_assist(db: Session, customer_id: int, payload: Dict) -> Dict:
@@ -19,13 +20,25 @@ def build_assist(db: Session, customer_id: int, payload: Dict) -> Dict:
     matched_script = next((item for item in list_scripts(db) if item.type in {customer_type, "通用"}), None)
     evidence = list_evidence(db)[:3]
     evidence_text = format_evidence_text(evidence)
+    # 会中辅助 RAG 注入：按客户名/行业两路检索研究块，命中才把资料块前置进提示词；
+    # 无命中时 prompt 保持原样，行为与现状完全一致
+    hits = collect_research_cards(db, name=customer.name,
+                                  industry=getattr(customer, "industry", None),
+                                  customer_id=customer.id, k=3)
+    intel_block = ""
+    if hits:
+        intel_block = "\n".join(
+            f"[资料{i + 1}] {h.get('title')}（来源：{h.get('url') or h.get('source_name')}）\n{h.get('snippet')}"
+            for i, h in enumerate(hits)
+        )
+    intel_segment = f"内部资料：\n{intel_block}\n" if intel_block else ""
     prompt = f"""请基于销售五步法生成会中辅助建议。
 当前阶段：{detected_stage}
 客户类型：{customer_type}
 客户输入：{transcript or '暂无输入'}
 识别到的异议：{objection or '无'}
 权威证据：{evidence_text or '暂无'}
-请输出：阶段提示、可执行话术、异议应答、2条操作提醒、来源说明。"""
+{intel_segment}请输出：阶段提示、可执行话术、异议应答、2条操作提醒、来源说明。"""
     llm_text = ""
     try:
         llm_text = generate_text(prompt, system=build_system_prompt("assist", customer_type, type_info, evidence))
@@ -44,9 +57,10 @@ def build_assist(db: Session, customer_id: int, payload: Dict) -> Dict:
             "继续用具体行业事实代替空洞共情。",
             "如果客户提到预算，优先给低门槛测试方案。",
         ],
-        "source_cards": source_cards,
+        "source_cards": source_cards + cards_from_intel(hits),
         "source_refs": source_refs,
         "llm_text": llm_text or None,
+        "external_intel": hits,
     }
 
 
