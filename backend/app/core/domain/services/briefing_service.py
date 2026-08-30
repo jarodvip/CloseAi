@@ -21,7 +21,8 @@ def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = No
     cases = [{"code": item.code, "title": item.title, "type": item.type, "industry": item.industry, "stage": item.stage, "result": item.result, "source": item.source} for item in list_cases(db, primary_type or "")][:3]
     evidence = list_evidence(db)[:3]
     evidence_text = "；".join([f"{e.source}: {e.metric}={e.value}" for e in evidence if e.source and e.value])
-    prompt = f"""请根据客户资料生成销售会前简报。
+    prompt = f"""你是销售作战助手。请根据以下客户资料生成会前简报，输出简洁、可执行、专业的中文建议。
+
 客户：{customer.name}
 行业：{customer.industry or '未知'}
 阶段：{customer.stage or '未知'}
@@ -29,7 +30,15 @@ def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = No
 类型策略：{type_info.strategy if type_info else '先判断客户类型与增长瓶颈'}
 禁忌：{type_info.taboo if type_info else '避免空泛承诺'}
 权威证据：{evidence_text or '暂无'}
-请输出：判断依据、破冰话术、重点方向、推荐案例要点、潜在异议、下一步动作、来源说明。"""
+
+请按以下格式输出：
+【判断依据】客户属于什么类型，判断理由
+【破冰话术】第一句如何切入
+【重点方向】本次拜访应聚焦的核心议题
+【推荐案例要点】匹配案例的启示
+【潜在异议】客户可能提出的顾虑及预应对话术
+【下一步动作】会后要跟进的具体事项
+【来源说明】引用知识的来源"""
     llm_text = ""
     try:
         llm_text = generate_text(prompt, system=build_system_prompt("briefing", primary_type or "待判断", type_info, evidence, customer=customer))

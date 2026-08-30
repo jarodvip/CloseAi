@@ -19,14 +19,22 @@ def build_followup(db: Session, customer_id: int, payload: Dict) -> Dict:
     matched_script = next((item for item in list_scripts(db) if item.type in {customer_type, "通用"}), None)
     evidence = list_evidence(db)[:3]
     evidence_text = format_evidence_text(evidence)
-    prompt = f"""请基于会议信息生成会后跟进包。
+    prompt = f"""你是销售助理，请基于会议信息生成会后跟进包，输出简洁中文，可直接使用。
+
 客户：{customer.name}
 类型：{customer_type}
-摘要：{summary}
-决策：{', '.join(decisions)}
-待办：{', '.join(pending_actions)}
+会议摘要：{summary}
+决策结果：{', '.join(decisions)}
+待办动作：{', '.join(pending_actions)}
 权威证据：{evidence_text or '暂无'}
-请输出：结构化摘要、任务清单、邮件草稿、微信跟进话术、知识沉淀建议、来源说明。"""
+
+请按以下格式输出：
+【结构化摘要】本次拜访核心结论
+【任务清单】3-5个具体跟进任务及优先级
+【邮件草稿】正式跟进邮件正文
+【微信跟进话术】简洁的消息话术
+【知识沉淀建议】本次拜访是否有新模板/案例值得入库
+【来源说明】引用知识的来源"""
     llm_text = ""
     try:
         llm_text = generate_text(prompt, system=build_system_prompt("followup", customer_type, type_info, evidence))

@@ -1,10 +1,11 @@
-from typing import Optional
-import os
+"""LLM 调用适配层：统一封装生成与联网搜索。"""
 import json
+import os
+from typing import Optional
 
-from app.core.config import settings
 import httpx
 
+from app.core.config import settings
 
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", settings.LLM_BASE_URL)
 LLM_API_KEY = os.getenv("LLM_API_KEY", settings.LLM_API_KEY)
@@ -23,7 +24,7 @@ def generate_text(prompt: str, system: Optional[str] = None, extra_payload: Opti
     messages.append({"role": "user", "content": prompt})
     payload = {"model": LLM_MODEL, "messages": messages, "temperature": 0.4}
     if extra_payload:
-        payload.update(extra_payload)  # 联网参数等扩展项整体并入
+        payload.update(extra_payload)
     try:
         with httpx.Client(timeout=LLM_TIMEOUT) as client:
             resp = client.post(f"{LLM_BASE_URL}/v1/chat/completions", json=payload, headers=headers)
@@ -32,7 +33,7 @@ def generate_text(prompt: str, system: Optional[str] = None, extra_payload: Opti
             return data["choices"][0]["message"]["content"]
     except Exception as exc:
         if not LLM_API_KEY:
-            return f"[LLM模拟回复] {prompt[:120]}...（未配置 LLM_API_KEY）"
+            return "[LLM模拟] 未配置 LLM_API_KEY，以下为规则引擎生成的建议。"
         raise exc
 
 
@@ -45,5 +46,5 @@ def call_llm_with_search(prompt: str, system: Optional[str] = None) -> str:
         except Exception:
             extra = {}
         if not isinstance(extra, dict):
-            extra = {}  # 合法但非对象的 JSON（如 true）按未配置处理
+            extra = {}
     return generate_text(prompt, system=system, extra_payload=extra or None)

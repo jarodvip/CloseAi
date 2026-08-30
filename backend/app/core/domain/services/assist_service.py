@@ -32,13 +32,19 @@ def build_assist(db: Session, customer_id: int, payload: Dict) -> Dict:
             for i, h in enumerate(hits)
         )
     intel_segment = f"内部资料：\n{intel_block}\n" if intel_block else ""
-    prompt = f"""请基于销售五步法生成会中辅助建议。
+    prompt = f"""你是会中销售辅助助手，基于销售五步法（听-认-比-算-定）提供实时建议。
+
 当前阶段：{detected_stage}
 客户类型：{customer_type}
 客户输入：{transcript or '暂无输入'}
 识别到的异议：{objection or '无'}
 权威证据：{evidence_text or '暂无'}
-{intel_segment}请输出：阶段提示、可执行话术、异议应答、2条操作提醒、来源说明。"""
+{intel_segment}请按以下格式输出：
+【阶段提示】当前阶段的推进要点
+【可执行话术】2-3句可直接使用的话术
+【异议应答】针对已识别异议的应对话术
+【操作提醒】2条具体行动建议
+【来源说明】引用知识的来源"""
     llm_text = ""
     try:
         llm_text = generate_text(prompt, system=build_system_prompt("assist", customer_type, type_info, evidence))
