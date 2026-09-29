@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     LLM_SEARCH_PAYLOAD: str = ""  # 联网参数 JSON 串（内部API语义不同，经环境变量注入后整体 merge 进请求体；留空=不联网）
     LLM_EMBEDDING_MODEL: str = "text-embedding-3-small"  # OpenAI 兼容 embedding 接口模型名
 
+    # CRM 集成（v1.0）：通用 webhook。配置后跟进包可一键推送；留空则前端隐藏入口
+    CRM_WEBHOOK_URL: str = ""
+
     # 数据库配置
     DATABASE_URL: str = "sqlite:///./sales_agent.db"
 

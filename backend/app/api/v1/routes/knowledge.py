@@ -4,31 +4,34 @@ from sqlalchemy import distinct
 from app.core.domain.services.knowledge_service import (
     list_customer_types, list_cases, list_scripts, list_evidence, create_case, create_script,
     list_suggestions, approve_suggestion, reject_suggestion, suggestion_dict,
+    set_case_shared, set_script_shared,
 )
 from app.schemas.knowledge_admin import CaseIn, ScriptIn, SuggestionEditIn, SuggestionRejectIn
-from app.core.deps import get_db, get_current_user, require_admin
+from app.core.deps import get_db, get_current_user, require_admin, require_user
 from app.models.knowledge import Case, Script
 
 router = APIRouter()
 
 
 @router.get("/customer-types")
-def get_customer_types(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def get_customer_types(db: Session = Depends(get_db), user: dict = Depends(require_user)):
     return {"code": 0, "message": "ok", "data": [item.__dict__ for item in list_customer_types(db)]}
 
 
 @router.get("/cases")
-def get_cases(query: str = "", db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    return {"code": 0, "message": "ok", "data": [item.__dict__ for item in list_cases(db, query)]}
+def get_cases(query: str = "", db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    return {"code": 0, "message": "ok",
+            "data": [item.__dict__ for item in list_cases(db, query, user["username"], user.get("role"))]}
 
 
 @router.get("/scripts")
-def get_scripts(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    return {"code": 0, "message": "ok", "data": [item.__dict__ for item in list_scripts(db)]}
+def get_scripts(db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    return {"code": 0, "message": "ok",
+            "data": [item.__dict__ for item in list_scripts(db, user["username"], user.get("role"))]}
 
 
 @router.get("/evidence")
-def get_evidence(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def get_evidence(db: Session = Depends(get_db), user: dict = Depends(require_user)):
     return {"code": 0, "message": "ok", "data": [item.__dict__ for item in list_evidence(db)]}
 
 
@@ -52,14 +55,31 @@ def get_options(db: Session = Depends(get_db), user: dict = Depends(get_current_
     }
 
 
+# v1.0 团队知识共享：所有登录用户可创建知识；admin 创建自动共享，销售创建为个人条目
 @router.post("/cases")
-def create_case_route(payload: CaseIn, db: Session = Depends(get_db), user: dict = Depends(require_admin)):
-    return {"code": 0, "message": "ok", "data": create_case(db, payload.model_dump()).model_dump()}
+def create_case_route(payload: CaseIn, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    is_shared = user.get("role") == "admin"
+    record = create_case(db, payload.model_dump(), owner=user["username"], is_shared=is_shared)
+    return {"code": 0, "message": "ok", "data": record.__dict__}
 
 
 @router.post("/scripts")
-def create_script_route(payload: ScriptIn, db: Session = Depends(get_db), user: dict = Depends(require_admin)):
-    return {"code": 0, "message": "ok", "data": create_script(db, payload.model_dump()).model_dump()}
+def create_script_route(payload: ScriptIn, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    is_shared = user.get("role") == "admin"
+    record = create_script(db, payload.model_dump(), owner=user["username"], is_shared=is_shared)
+    return {"code": 0, "message": "ok", "data": record.__dict__}
+
+
+@router.patch("/cases/{case_id}/share")
+def share_case_route(case_id: int, is_shared: bool, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    record = set_case_shared(db, case_id, is_shared, user["username"], user.get("role"))
+    return {"code": 0, "message": "ok", "data": record.__dict__}
+
+
+@router.patch("/scripts/{script_id}/share")
+def share_script_route(script_id: int, is_shared: bool, db: Session = Depends(get_db), user: dict = Depends(require_user)):
+    record = set_script_shared(db, script_id, is_shared, user["username"], user.get("role"))
+    return {"code": 0, "message": "ok", "data": record.__dict__}
 
 
 # ── 知识沉淀建议审核流（admin） ──

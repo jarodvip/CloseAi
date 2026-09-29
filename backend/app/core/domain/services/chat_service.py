@@ -117,7 +117,7 @@ def _build_context(db: Session, customer, history, user_content: str) -> dict:
     customer_type = (customer.primary_type or "") if customer else ""
     cases = list_cases(db=db, query=customer_type)[:3]
     type_info = get_customer_type_by_code(db, to_code(customer_type)) if customer_type else None
-    matched_script = next((item for item in list_scripts(db) if item.type in {customer_type, "通用"}), None)
+    matched_script = next((item for item in list_scripts(db, shared_only=True) if item.type in {customer_type, "通用"}), None)
     evidence = list_evidence(db)[:3]
     evidence_text = format_evidence_text(evidence)
     source_cards = build_source_cards(type_info, matched_script, evidence)

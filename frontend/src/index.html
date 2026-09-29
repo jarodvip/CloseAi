@@ -156,8 +156,10 @@
         <button onclick="showPage('chat-page')" class="nav-btn" data-page="chat-page">💬 AI 助手</button>
         <button onclick="showPage('customers-page')" class="nav-btn" data-page="customers-page">👥 客户画像</button>
         <button onclick="showPage('meeting-page')" class="nav-btn" data-page="meeting-page">📅 会前 / 会中 / 会后</button>
-        <button onclick="showPage('knowledge-page')" class="nav-btn" data-page="knowledge-page" data-admin-only>📚 知识库后台</button>
-        <button onclick="logout()" style="margin-top:18px;">🚪 退出</button>
+        <button onclick="showPage('knowledge-page')" class="nav-btn" data-page="knowledge-page">📚 知识库</button>
+        <button onclick="showPage('users-page')" class="nav-btn" data-page="users-page" data-admin-only>👤 用户管理</button>
+        <button onclick="openChangePassword()" style="margin-top:18px;">🔑 修改密码</button>
+        <button onclick="logout()">🚪 退出</button>
       </div>
       <div class="main">
         <div id="home-page" class="page active">
@@ -416,6 +418,7 @@
         <div id="knowledge-page" class="page" data-admin-only>
           <div class="card" style="margin-bottom:16px;">
             <h2 style="margin:0 0 10px;font-size:18px;">✨ 新增案例</h2>
+            <p class="muted" style="margin:0 0 8px;font-size:13px;">管理员创建的案例自动团队共享；销售创建的为个人条目，可一键共享进入团队检索池。</p>
             <form id="knowledge-case-form" onsubmit="return false;">
               <div class="grid">
                 <div>
@@ -450,7 +453,7 @@
             <div style="overflow-x:auto;">
               <table>
                 <thead>
-                  <tr><th>编码</th><th>标题</th><th>类型</th><th>行业</th><th>结果</th><th>来源</th></tr>
+                  <tr><th>编码</th><th>标题</th><th>类型</th><th>行业</th><th>结果</th><th>来源</th><th>归属</th><th>操作</th></tr>
                 </thead>
                 <tbody id="knowledge-case-table-body"></tbody>
               </table>
@@ -482,13 +485,13 @@
             <div style="overflow-x:auto;">
               <table>
                 <thead>
-                  <tr><th>场景</th><th>类型</th><th>话术</th><th>来源</th></tr>
+                  <tr><th>场景</th><th>类型</th><th>话术</th><th>来源</th><th>归属</th><th>操作</th></tr>
                 </thead>
                 <tbody id="knowledge-script-table-body"></tbody>
               </table>
             </div>
           </div>
-          <div class="card">
+          <div class="card" data-admin-only>
             <h2 style="margin:0 0 10px;font-size:18px;">📮 知识沉淀建议（会后自动生成，审核后入库）</h2>
             <div style="overflow-x:auto;">
               <table>
@@ -499,6 +502,34 @@
               </table>
             </div>
             <div id="knowledge-suggestion-empty" class="empty-state" style="display:block;">📭 暂无待审核建议</div>
+          </div>
+        </div>
+
+        <div id="users-page" class="page" data-admin-only>
+          <div class="card" style="margin-bottom:16px;">
+            <h2 style="margin:0 0 10px;font-size:18px;">✨ 新建账号</h2>
+            <form id="user-create-form" onsubmit="return false;">
+              <div class="grid">
+                <input id="user-new-username" placeholder="用户名 *" required />
+                <input id="user-new-password" placeholder="密码（至少 8 位）*" type="password" required />
+                <select id="user-new-role">
+                  <option value="user">销售（user）</option>
+                  <option value="admin">管理员（admin）</option>
+                </select>
+              </div>
+              <button id="create-user-btn" type="button">创建账号</button>
+            </form>
+          </div>
+          <div class="card">
+            <h2 style="margin:0 0 10px;font-size:18px;">账号列表</h2>
+            <div style="overflow-x:auto;">
+              <table>
+                <thead>
+                  <tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>操作</th></tr>
+                </thead>
+                <tbody id="users-table-body"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -615,6 +646,21 @@
         <input id="type-confidence" type="number" step="0.01" min="0" max="1" placeholder="置信度 0~1" />
         <textarea id="type-evidence" rows="3" placeholder="类型判断依据"></textarea>
         <button id="save-type" type="button">保存</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="password-modal" class="modal">
+    <div class="modal-content" style="width:min(420px, 92vw);">
+      <div class="row" style="margin-bottom:10px;">
+        <h3 style="margin:0;font-size:18px;">🔑 修改密码</h3>
+        <button class="secondary" onclick="closeModal('password-modal')">关闭</button>
+      </div>
+      <form id="password-form" onsubmit="return false;">
+        <input id="pw-old" placeholder="原密码" type="password" />
+        <input id="pw-new" placeholder="新密码（至少 8 位）" type="password" />
+        <input id="pw-new2" placeholder="再次输入新密码" type="password" />
+        <button type="button" onclick="submitChangePassword()">确认修改</button>
       </form>
     </div>
   </div>

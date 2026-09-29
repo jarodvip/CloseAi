@@ -1,7 +1,7 @@
 /* 客户攻单AI Service Worker：App Shell 离线缓存（stale-while-revalidate）
    只缓存前端静态资源；后端 API（跨域 8002 端口）一律不拦截。
    业务数据（简报/会中建议）的离线兜底由页面层 localStorage 负责（closeai-cache-*）。 */
-const CACHE = 'closeai-shell-v1';
+const CACHE = 'closeai-shell-v2';  // 发布新版前端时必须递增，activate 时自动清理旧缓存
 const SHELL = [
   './index.html',
   './app.js',

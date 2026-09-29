@@ -6,3 +6,6 @@ backend_backup_20260728/
 # SQLite WAL sidecar files
 *.db-wal
 *.db-shm
+
+# DB backups
+backend/backups/

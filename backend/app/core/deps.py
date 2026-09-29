@@ -12,7 +12,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/lo
 
 
 async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> Optional[Dict]:
-    """从 Authorization: Bearer <token> 解析用户信息（含 role）"""
+    """从 Authorization: Bearer <token> 解析用户信息（含 role）。
+    校验数据库中的账号状态：被禁用账号即使 token 未过期也立即失效"""
     if not token:
         return None
     payload = decode_access_token(token)
@@ -21,6 +22,14 @@ async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> Opt
     username = payload.get("sub") or payload.get("username")
     if not username:
         return None
+    from app.models.user import User
+    db = SessionLocal()
+    try:
+        row = db.query(User).filter(User.username == username).first()
+        if not row or not row.is_active:
+            return None
+    finally:
+        db.close()
     return {"username": username, "role": payload.get("role")}
 
 

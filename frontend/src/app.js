@@ -5,6 +5,9 @@ let currentSessionId = null;
 let currentCustomerId = null;
 let customerCache = [];
 let appOptions = null;
+let crmEnabled = false;        // CRM webhook 是否已配置（/api/v1/config）
+let lastFollowup = null;       // 最近一次跟进包结果，供 CRM 推送 / CSV 导出
+let lastFollowupCustomerId = null;
 
 // 标签选择状态
 const selectedTags = { decisions: new Set(), actions: new Set() };
@@ -186,6 +189,7 @@ function showPage(page) {
     btn.classList.toggle('active', btn.dataset.page === page);
   });
   if (page === 'dashboard-page') loadDashboard();
+  if (page === 'users-page') loadUsers();
   if (window.innerWidth <= 860) {
     document.getElementById('sidebar').classList.remove('open');
     document.getElementById('sidebar-overlay').classList.remove('show');
@@ -231,6 +235,15 @@ function applyRoleVisibility() {
 async function refreshUserAndVisibility() {
   await fetchCurrentUser();
   applyRoleVisibility();
+  await loadAppConfig();
+}
+
+// 功能开关：CRM webhook 是否已配置
+async function loadAppConfig() {
+  try {
+    const data = await api('/api/v1/config');
+    crmEnabled = !!data.data?.crm_webhook_enabled;
+  } catch (e) { crmEnabled = false; }
 }
 
 // ─── 客户列表 ───
@@ -506,8 +519,15 @@ async function renderFollowup(customerId) {
   };
   const data = await api(`/api/v1/customers/${customerId}/followup`, { method: 'POST', body: JSON.stringify(payload) });
   const out = data.data || {};
+  lastFollowup = out;
+  lastFollowupCustomerId = customerId;
   const sourceCards = sourceCardsHtml(out.source_cards || [], { scene: 'followup', customerId });
   const suggestionsHtml = renderKnowledgeSuggestions(out.knowledge_suggestions || []);
+  const actionBtns = `
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+      <button class="sm secondary" type="button" onclick="exportFollowupCsv()">⬇️ 导出 CSV</button>
+      ${crmEnabled ? `<button class="sm" type="button" onclick="pushFollowupToCrm(${customerId})">🔁 推送到 CRM</button>` : ''}
+    </div>`;
   const container = document.getElementById('followup-result');
   container.innerHTML = `
     <div class="result-block">
@@ -518,6 +538,7 @@ async function renderFollowup(customerId) {
       <p><strong>邮件草稿：</strong>${escapeHtml(out.followup_email || '-')}</p>
       <p><strong>微信跟进：</strong>${escapeHtml(out.followup_wechat || '-')}</p>
       <p><strong>知识沉淀建议：</strong>${escapeHtml(out.knowledge_update_suggestion || '-')}</p>
+      ${actionBtns}
       ${suggestionsHtml}
       ${sourceCards}
     </div>
@@ -849,10 +870,29 @@ async function loadKnowledgeCases() {
     const data = await api('/api/v1/knowledge/cases');
     const tbody = document.getElementById('knowledge-case-table-body');
     if (!tbody) return;
-    tbody.innerHTML = (data.data || []).map(item => `
-      <tr><td>${escapeHtml(item.code||'')}</td><td>${escapeHtml(item.title||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.industry||'')}</td><td>${escapeHtml(item.result||'')}</td><td>${escapeHtml(item.source||'')}</td></tr>
-    `).join('');
+    const isAdmin = currentUser?.role === 'admin';
+    tbody.innerHTML = (data.data || []).map(item => {
+      // 全局种子(owner NULL)始终在检索池;仅个人条目有共享/取消共享操作
+      const isGlobal = !item.owner_username;
+      const canShare = !isGlobal && (isAdmin || item.owner_username === currentUser?.username);
+      const owner = isGlobal ? '全局' : item.owner_username;
+      const shareBtn = canShare
+        ? `<button class="sm ${item.is_shared ? 'secondary' : ''}" onclick="toggleCaseShare(${item.id}, ${!item.is_shared})">${item.is_shared ? '取消共享' : '共享'}</button>`
+        : '';
+      const shareBadge = isGlobal ? '<span class="badge badge-gray">全局</span>'
+        : item.is_shared ? '<span class="badge badge-green">共享</span>'
+        : '<span class="badge badge-gray">个人</span>';
+      return `<tr><td>${escapeHtml(item.code||'')}</td><td>${escapeHtml(item.title||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.industry||'')}</td><td>${escapeHtml(item.result||'')}</td><td>${escapeHtml(item.source||'')}</td><td>${escapeHtml(owner)} ${shareBadge}</td><td><span class="button-stack">${shareBtn}</span></td></tr>`;
+    }).join('');
   } catch (e) { console.error('loadKnowledgeCases:', e); }
+}
+
+async function toggleCaseShare(caseId, shared) {
+  try {
+    await api(`/api/v1/knowledge/cases/${caseId}/share?is_shared=${shared}`, { method: 'PATCH' });
+    showToast(shared ? '案例已共享到团队' : '案例已转为个人', 'success');
+    loadKnowledgeCases();
+  } catch (e) { showToast(e.message); }
 }
 
 async function createKnowledgeCase() {
@@ -881,10 +921,28 @@ async function loadKnowledgeScripts() {
     const data = await api('/api/v1/knowledge/scripts');
     const tbody = document.getElementById('knowledge-script-table-body');
     if (!tbody) return;
-    tbody.innerHTML = (data.data || []).map(item => `
-      <tr><td>${escapeHtml(item.scene||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.template||'')}</td><td>${escapeHtml(item.source||'')}</td></tr>
-    `).join('');
+    const isAdmin = currentUser?.role === 'admin';
+    tbody.innerHTML = (data.data || []).map(item => {
+      const isGlobal = !item.owner_username;
+      const canShare = !isGlobal && (isAdmin || item.owner_username === currentUser?.username);
+      const owner = isGlobal ? '全局' : item.owner_username;
+      const shareBtn = canShare
+        ? `<button class="sm ${item.is_shared ? 'secondary' : ''}" onclick="toggleScriptShare(${item.id}, ${!item.is_shared})">${item.is_shared ? '取消共享' : '共享'}</button>`
+        : '';
+      const shareBadge = isGlobal ? '<span class="badge badge-gray">全局</span>'
+        : item.is_shared ? '<span class="badge badge-green">共享</span>'
+        : '<span class="badge badge-gray">个人</span>';
+      return `<tr><td>${escapeHtml(item.scene||'')}</td><td>${escapeHtml(item.type||'')}</td><td>${escapeHtml(item.template||'')}</td><td>${escapeHtml(item.source||'')}</td><td>${escapeHtml(owner)} ${shareBadge}</td><td><span class="button-stack">${shareBtn}</span></td></tr>`;
+    }).join('');
   } catch (e) { console.error('loadKnowledgeScripts:', e); }
+}
+
+async function toggleScriptShare(scriptId, shared) {
+  try {
+    await api(`/api/v1/knowledge/scripts/${scriptId}/share?is_shared=${shared}`, { method: 'PATCH' });
+    showToast(shared ? '话术已共享到团队（进入检索池）' : '话术已转为个人', 'success');
+    loadKnowledgeScripts();
+  } catch (e) { showToast(e.message); }
 }
 
 async function createKnowledgeScript() {
@@ -964,6 +1022,126 @@ async function rejectKnowledgeSuggestion(id) {
     showToast('已驳回', 'success');
     await loadKnowledgeSuggestions();
   } catch (e) { showToast(e.message); }
+}
+
+// ─── 用户管理（admin） ───
+
+async function loadUsers() {
+  if (currentUser?.role !== 'admin') return;
+  try {
+    const data = await api('/api/v1/auth/users');
+    const tbody = document.getElementById('users-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = (data.data || []).map(u => `
+      <tr>
+        <td>${u.id}</td>
+        <td>${escapeHtml(u.username)}</td>
+        <td>${u.role === 'admin' ? '<span class="badge badge-green">管理员</span>' : '<span class="badge badge-gray">销售</span>'}</td>
+        <td>${u.is_active ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-gray">已禁用</span>'}</td>
+        <td>
+          <span class="button-stack">
+            ${u.username === currentUser?.username ? '<span class="muted" style="font-size:12px;align-self:center;">当前账号</span>' : `
+              <button class="sm ${u.is_active ? 'secondary' : ''}" onclick="setUserStatus(${u.id}, ${!u.is_active})">${u.is_active ? '禁用' : '启用'}</button>
+              <button class="sm secondary" onclick="resetUserPassword(${u.id}, '${escapeHtml(u.username)}')">重置密码</button>
+            `}
+          </span>
+        </td>
+      </tr>`).join('');
+  } catch (e) { console.error('loadUsers:', e); }
+}
+
+async function createUser() {
+  const payload = {
+    username: document.getElementById('user-new-username').value.trim(),
+    password: document.getElementById('user-new-password').value,
+    role: document.getElementById('user-new-role').value,
+  };
+  if (!payload.username || !payload.password) return showToast('请填写用户名和密码', 'error');
+  if (payload.password.length < 8) return showToast('密码长度至少 8 位', 'error');
+  setLoading('create-user-btn', true);
+  try {
+    await api('/api/v1/auth/users', { method: 'POST', body: JSON.stringify(payload) });
+    document.getElementById('user-create-form').reset();
+    await loadUsers();
+    showToast('账号已创建', 'success');
+  } catch (e) { showToast(e.message); } finally { setLoading('create-user-btn', false); }
+}
+
+async function setUserStatus(userId, active) {
+  if (!active && !confirm('确定禁用该账号？禁用后其登录立即失效。')) return;
+  try {
+    await api(`/api/v1/auth/users/${userId}/status`, { method: 'PATCH', body: JSON.stringify({ is_active: active }) });
+    showToast(active ? '账号已启用' : '账号已禁用', 'success');
+    loadUsers();
+  } catch (e) { showToast(e.message); }
+}
+
+async function resetUserPassword(userId, username) {
+  const newPw = prompt(`为 ${username} 设置新密码（至少 8 位）`);
+  if (newPw === null) return;
+  if (newPw.trim().length < 8) return showToast('密码长度至少 8 位', 'error');
+  try {
+    await api(`/api/v1/auth/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ new_password: newPw.trim() }) });
+    showToast('密码已重置', 'success');
+  } catch (e) { showToast(e.message); }
+}
+
+// ─── CRM 推送 / CSV 导出 ───
+
+async function pushFollowupToCrm(customerId) {
+  if (!lastFollowup) return showToast('请先生成跟进包', 'error');
+  showToast('正在推送 CRM...', 'info');
+  try {
+    await api(`/api/v1/customers/${customerId}/crm-push`, { method: 'POST', body: JSON.stringify({
+      summary: lastFollowup.summary || '',
+      tasks: lastFollowup.tasks || [],
+      email: lastFollowup.followup_email || '',
+      wechat: lastFollowup.followup_wechat || '',
+      decisions: lastFollowup.decisions || [],
+      pending_actions: lastFollowup.pending_actions || [],
+    }) });
+    showToast('已推送到 CRM', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+function exportFollowupCsv() {
+  if (!lastFollowup) return showToast('请先生成跟进包', 'error');
+  const rows = [['项目', '内容']];
+  rows.push(['摘要', lastFollowup.summary || '']);
+  (lastFollowup.tasks || []).forEach(t => rows.push(['任务', `${t.title}（${t.deadline}）`]));
+  rows.push(['邮件草稿', lastFollowup.followup_email || '']);
+  rows.push(['微信跟进', lastFollowup.followup_wechat || '']);
+  const csv = '\ufeff' + rows.map(r => r.map(c => `"${String(c || '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `跟进包_${lastFollowupCustomerId || '客户'}_${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('CSV 已导出', 'success');
+}
+
+// ─── 修改密码 ───
+
+function openChangePassword() {
+  document.getElementById('pw-old').value = '';
+  document.getElementById('pw-new').value = '';
+  document.getElementById('pw-new2').value = '';
+  document.getElementById('password-modal').style.display = 'flex';
+}
+
+async function submitChangePassword() {
+  const oldPw = document.getElementById('pw-old').value;
+  const newPw = document.getElementById('pw-new').value;
+  const newPw2 = document.getElementById('pw-new2').value;
+  if (!oldPw || !newPw) return showToast('请填写完整', 'error');
+  if (newPw.length < 8) return showToast('新密码长度至少 8 位', 'error');
+  if (newPw !== newPw2) return showToast('两次输入的新密码不一致', 'error');
+  try {
+    await api('/api/v1/auth/change-password', { method: 'POST', body: JSON.stringify({ old_password: oldPw, new_password: newPw }) });
+    closeModal('password-modal');
+    showToast('密码已修改', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
 }
 
 // ─── Dashboard ───
@@ -1434,12 +1612,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       showPage('home-page');
       document.getElementById('workbench-page').style.display = 'block';
       applyRoleVisibility();
+      await loadAppConfig();
       await loadOptions();
       await loadCustomers();
       await populateCustomerSelects();
       loadKnowledgeCases();
       loadKnowledgeScripts();
-      loadKnowledgeSuggestions();
+      if (currentUser?.role === 'admin') loadKnowledgeSuggestions();
       refreshDashboard();
       await loadChatSessions();
       const detail = document.getElementById('customer-detail');
@@ -1466,7 +1645,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await populateCustomerSelects();
       loadKnowledgeCases();
       loadKnowledgeScripts();
-      loadKnowledgeSuggestions();
+      if (currentUser?.role === 'admin') loadKnowledgeSuggestions();
       refreshDashboard();
       await loadChatSessions();
       showToast('登录成功，欢迎回来！', 'success');
@@ -1477,6 +1656,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('create-customer').addEventListener('click', createCustomer);
   document.getElementById('create-knowledge-case').addEventListener('click', createKnowledgeCase);
+  document.getElementById('create-user-btn')?.addEventListener('click', createUser);
   document.getElementById('create-knowledge-script').addEventListener('click', createKnowledgeScript);
 
   document.getElementById('save-type').addEventListener('click', async () => {

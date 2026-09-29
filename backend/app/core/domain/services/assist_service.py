@@ -74,7 +74,7 @@ def build_assist(db: Session, customer_id: int, payload: Dict) -> Dict:
 def _match_script(db: Session, transcript: str, customer_type: str):
     """话术匹配：embedding 可用时在"本类型+通用"池内按转写语义挑最相关话术；
     不可用（未配置/接口失败）时退回原行为——取该池第一条"""
-    scripts = list_scripts(db)
+    scripts = list_scripts(db, shared_only=True)
     pool = [s for s in scripts if s.type in {customer_type, "通用"}] or scripts
     if not pool:
         return None

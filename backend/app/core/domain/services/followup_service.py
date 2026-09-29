@@ -17,7 +17,7 @@ def build_followup(db: Session, customer_id: int, payload: Dict) -> Dict:
     pending_actions = payload.get("pending_actions") or []
     customer_type = customer.primary_type or payload.get("customer_type") or "品牌野心型"
     type_info = get_customer_type_by_code(db, to_code(customer_type))
-    matched_script = next((item for item in list_scripts(db) if item.type in {customer_type, "通用"}), None)
+    matched_script = next((item for item in list_scripts(db, shared_only=True) if item.type in {customer_type, "通用"}), None)
     evidence = list_evidence(db)[:3]
     evidence_text = format_evidence_text(evidence)
     prompt = f"""你是销售助理，请基于会议信息生成会后跟进包，输出简洁中文，可直接使用。

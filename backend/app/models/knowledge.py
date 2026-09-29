@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean
 from app.db.session import Base
 
 
@@ -28,6 +28,8 @@ class Case(Base):
     stage = Column(String(100), nullable=True)
     result = Column(Text, nullable=True)
     source = Column(String(255), nullable=True)
+    owner_username = Column(String(50), nullable=True, index=True)  # NULL=全局种子数据
+    is_shared = Column(Boolean, default=False, index=True)          # 共享后进入团队检索池
 
 
 class Script(Base):
@@ -37,6 +39,8 @@ class Script(Base):
     type = Column(String(100), nullable=True)
     template = Column(Text, nullable=True)
     source = Column(String(255), nullable=True)
+    owner_username = Column(String(50), nullable=True, index=True)  # NULL=全局种子数据
+    is_shared = Column(Boolean, default=False, index=True)          # 共享后进入团队检索池
 
 
 class Evidence(Base):

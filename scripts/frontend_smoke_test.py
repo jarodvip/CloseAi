@@ -105,8 +105,9 @@ def main():
     results.append(check("login_sales", bool(sales_token) and sales_login.get("role") == "user", detail=f"role={sales_login.get('role')}"))
 
     sales_headers = {"authorization": f"Bearer {sales_token}"}
-    admin_knowledge = request("/api/v1/knowledge/cases", headers=sales_headers, method="POST", expect_status=403)
-    results.append(check("sales_knowledge_forbidden", "权限不足" in (admin_knowledge.get("detail") or ""), detail=f"detail={admin_knowledge.get('detail')}"))
+    # v1.0 起：销售可以创建个人知识（is_shared=false）；禁用的是沉淀建议审核（admin-only）
+    sales_suggestions = request("/api/v1/knowledge/suggestions", headers=sales_headers, expect_status=403)
+    results.append(check("sales_suggestions_forbidden", "权限不足" in (sales_suggestions.get("detail") or ""), detail=f"detail={sales_suggestions.get('detail')}"))
 
     knowledge_cases = request("/api/v1/knowledge/cases", headers=auth_headers)
     results.append(check("knowledge_cases_api", isinstance(knowledge_cases.get("data"), list) and len(knowledge_cases.get("data", [])) >= 1, detail="admin_can_read"))
@@ -142,6 +143,16 @@ def main():
         ("mobile_media_query", 'max-width: 720px'),
     ]:
         results.append(check(f"frontend_{name}", fragment in index_html))
+
+    # v1.0 团队与集成
+    config = request("/api/v1/config", headers=auth_headers)
+    results.append(check("v10_config_api", config.get("code") == 0 and "crm_webhook_enabled" in config.get("data", {})))
+    users_list = request("/api/v1/auth/users", headers=auth_headers)
+    results.append(check("v10_users_api", isinstance(users_list.get("data"), list) and any(u["username"] == "admin" for u in users_list["data"])))
+    users_forbidden = request("/api/v1/auth/users", headers=sales_headers, expect_status=403)
+    results.append(check("v10_users_forbidden_for_sales", "权限不足" in (users_forbidden.get("detail") or "")))
+    sales_case_create = request("/api/v1/knowledge/cases", {"code": f"SMOKE_SALES_{customer_id}", "title": "smoke 个人案例"}, sales_headers, "POST")
+    results.append(check("v10_sales_creates_personal_knowledge", sales_case_create.get("data", {}).get("is_shared") is False and sales_case_create.get("data", {}).get("owner_username") == "sales"))
 
     # PWA 静态资源可达
     try:

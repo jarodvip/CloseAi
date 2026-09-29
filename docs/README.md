@@ -1,7 +1,7 @@
 # 客户攻单AI — 项目状态
 
 > 最后更新：2026-09-29
-> 当前版本：v0.9.0
+> 当前版本：v1.0.0
 
 ## 已实现
 
@@ -23,11 +23,11 @@
 - 完整测试覆盖（99 个后端测试：含反馈/建议审核/观测/混合检索专项）
 - **v0.8 知识飞轮**：来源卡反馈（👍/👎 采纳率看板）、知识沉淀建议审核流（会后自动生成 → admin 一键入库）、LLM 调用观测（成功率/降级/token/耗时）、混合检索（FTS5 + embedding 向量 RRF 融合，embedding 不可用自动降级纯 FTS）
 - **v0.9 现场可用**：会中实时辅助模式（语音转写 → 停顿 2.5s 自动生成建议，阶段实时显示，异常优雅降级）、PWA（manifest + Service Worker App Shell 缓存 + 图标，可安装到主屏）、移动端适配（弹窗近全屏、44px 触控目标、防 iOS 聚焦缩放）、离线兜底（简报/会中建议 localStorage 缓存，断网显示离线缓存版本）
+- **v1.0 团队与集成**：用户管理（admin 创建/禁用/重置密码，禁用即失效，登录限速 5 次/15 分钟，密码 ≥8 位，去除硬编码种子账号）、团队知识共享（销售可建个人案例/话术，一键共享进入团队检索池，admin 聚合视图）、CRM 集成（CRM_WEBHOOK_URL 通用 webhook 推送跟进包 + 推送日志 + 前端 CSV 导出）、数据库升级选项（DATABASE_URL 直接切换 PostgreSQL，psycopg2-binary 依赖）+ SQLite 在线备份脚本
 
 ## 待实现
 
 - 后端 ASR 接入（当前用浏览器 Web Speech API，依赖 Chrome/Edge + 网络）
-- CRM 集成
 - 多端同步
 
 ## 项目结构
@@ -80,6 +80,7 @@ scripts/               # 项目级脚本
 - `backend/scripts/import_docs.py`：导入 PDF/Word 到外部数据层
 - `backend/scripts/backfill_embeddings.py`：为存量研究分块回填 embedding 向量（v0.8 混合检索）
 - `backend/scripts/eval_retrieval.py`：检索相关性评测（纯 FTS vs 混合检索 hit@k/MRR）
+- `backend/scripts/backup_db.py`：SQLite 在线备份（--keep 保留份数；PostgreSQL 用 pg_dump）
 - `backend/scripts/demo.py`：演示脚本
 
 ## 设计文档导航

@@ -1,9 +1,19 @@
 from typing import List, Optional, Dict
 from datetime import datetime
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.models.knowledge import CustomerTypeKnowledge, Case, Script, Evidence, KnowledgeSuggestion
 from fastapi import HTTPException
+
+
+def _visibility_filter(model, username: Optional[str], role: Optional[str]):
+    """知识可见性：admin 全量；普通用户可见 共享项 + 本人创建项 + 全局种子(owner NULL)"""
+    if role == "admin" or not username:
+        return []
+    return [or_(model.is_shared.is_(True),
+                model.owner_username == username,
+                model.owner_username.is_(None))]
 
 
 def list_customer_types(db: Session) -> List[CustomerTypeKnowledge]:
@@ -14,24 +24,36 @@ def get_customer_type_by_code(db: Session, code: str) -> Optional[CustomerTypeKn
     return db.query(CustomerTypeKnowledge).filter(CustomerTypeKnowledge.code == code).first()
 
 
-def list_cases(db: Session, query: str = "") -> List[Case]:
+def list_cases(db: Session, query: str = "", username: Optional[str] = None,
+               role: Optional[str] = None) -> List[Case]:
     q = db.query(Case)
+    for cond in _visibility_filter(Case, username, role):
+        q = q.filter(cond)
     if query:
         like = f"%{query}%"
         q = q.filter((Case.title.ilike(like)) | (Case.type.ilike(like)) | (Case.industry.ilike(like)))
     return q.order_by(Case.id.asc()).all()
 
 
-def list_scripts(db: Session) -> List[Script]:
-    return db.query(Script).order_by(Script.id.asc()).all()
+def list_scripts(db: Session, username: Optional[str] = None, role: Optional[str] = None,
+                 shared_only: bool = False) -> List[Script]:
+    """shared_only=True 供简报/会中/会后检索池使用：个人未共享话术不进检索"""
+    q = db.query(Script)
+    if shared_only:
+        q = q.filter(or_(Script.is_shared.is_(True), Script.owner_username.is_(None)))
+    else:
+        for cond in _visibility_filter(Script, username, role):
+            q = q.filter(cond)
+    return q.order_by(Script.id.asc()).all()
 
 
 def list_evidence(db: Session) -> List[Evidence]:
     return db.query(Evidence).order_by(Evidence.id.asc()).all()
 
 
-def create_case(db: Session, payload: dict) -> Case:
-    record = Case(**payload)
+def create_case(db: Session, payload: dict, owner: Optional[str] = None,
+                is_shared: bool = False) -> Case:
+    record = Case(**payload, owner_username=owner, is_shared=is_shared)
     db.add(record)
     try:
         db.commit()
@@ -42,14 +64,42 @@ def create_case(db: Session, payload: dict) -> Case:
     return record
 
 
-def create_script(db: Session, payload: dict) -> Script:
-    record = Script(**payload)
+def create_script(db: Session, payload: dict, owner: Optional[str] = None,
+                  is_shared: bool = False) -> Script:
+    record = Script(**payload, owner_username=owner, is_shared=is_shared)
     db.add(record)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="话术已存在")
+    db.refresh(record)
+    return record
+
+
+def _get_shareable(db: Session, model, item_id: int, username: str, role: str):
+    record = db.query(model).filter(model.id == item_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="条目不存在")
+    if role != "admin" and record.owner_username != username:
+        raise HTTPException(status_code=403, detail="仅创建者或管理员可修改共享状态")
+    return record
+
+
+def set_case_shared(db: Session, item_id: int, is_shared: bool, username: str, role: str) -> Case:
+    record = _get_shareable(db, Case, item_id, username, role)
+    record.is_shared = is_shared
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def set_script_shared(db: Session, item_id: int, is_shared: bool, username: str, role: str) -> Script:
+    record = _get_shareable(db, Script, item_id, username, role)
+    record.is_shared = is_shared
+    db.add(record)
+    db.commit()
     db.refresh(record)
     return record
 
