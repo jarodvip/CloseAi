@@ -2,7 +2,10 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
   <title>客户攻单AI</title>
   <style>
     body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #111827; }
@@ -107,6 +110,23 @@
     .suggestion-block { background: #fefce8; border: 1px solid #fde68a; border-radius: 10px; padding: 10px; margin-top: 8px; }
     .suggestion-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .suggestion-content { color: #374151; margin-top: 4px; font-size: 13px; white-space: pre-wrap; }
+    /* 实时辅助模式 */
+    .live-status { color: #16a34a; font-weight: 500; }
+    #live-toggle-btn.live-active { background: #dc2626 !important; color: #fff; border-color: #dc2626; }
+    #live-toggle-btn.live-active { animation: pulse 1.2s infinite; }
+    /* 移动端适配：触控目标 ≥44px、防 iOS 聚焦缩放、弹窗近全屏 */
+    @media (max-width: 720px) {
+      input, select, textarea { font-size: 16px; }
+      button { min-height: 44px; }
+      button.sm { min-height: 36px; }
+      .fb-btn, .copy-btn { padding: 8px 12px; font-size: 14px; }
+      .modal-content { width: 96vw; max-height: 92vh; border-radius: 14px; padding: 14px; }
+      th, td { padding: 8px 6px; font-size: 13px; }
+      .split { grid-template-columns: 1fr; }
+      .agent-chat { min-height: 200px; }
+      .source-detail { font-size: 13px; }
+      .main { padding: 12px; }
+    }
   </style>
 </head>
 <body>
@@ -520,7 +540,11 @@
           <button id="voice-btn" type="button" class="secondary" onclick="toggleVoiceRecognition()" title="点击开始语音转写" style="padding:10px 12px; white-space:nowrap;">🎤 语音输入</button>
         </div>
         <div id="voice-status" class="muted" style="font-size:13px; margin-top:4px;"></div>
-        <button id="refresh-assist" type="button">生成会中辅助</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button id="refresh-assist" type="button" style="flex:1;">生成会中辅助</button>
+          <button id="live-toggle-btn" type="button" class="secondary" style="white-space:nowrap;">🎙️ 实时模式（自动出建议）</button>
+        </div>
+        <div id="live-status" class="live-status" style="font-size:13px; margin-top:4px;"></div>
       </form>
       <div id="assist-result" style="display:none;margin-top:12px;"></div>
     </div>

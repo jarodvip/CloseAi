@@ -38,12 +38,15 @@ def request(path, payload=None, headers=None, method=None, expect_status=None):
 
 
 def frontend_contains(text):
-    req = urllib.request.Request(f"{FRONTEND_BASE}/src/app.js")
+    return text in frontend_fetch("/src/app.js")
+
+
+def frontend_fetch(path):
+    req = urllib.request.Request(f"{FRONTEND_BASE}{path}")
     req.add_header("Cache-Control", "no-cache")
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with opener.open(req) as res:
-        body = res.read().decode()
-    return text in body
+        return res.read().decode()
 
 
 def main():
@@ -119,9 +122,43 @@ def main():
         ("chat_session_title", '当前会话：'),
         ("knowledge_page_admin_only", 'data-admin-only'),
         ("meeting_result_renderer", 'renderMeetingResult'),
+        # v0.9 现场可用
+        ("live_mode_toggle", 'live-toggle-btn'),
+        ("live_mode_loop", 'toggleLiveAssist'),
+        ("live_mode_status", 'live-status'),
+        ("offline_cache_write", 'closeai-cache-'),
+        ("offline_badge", '离线缓存'),
+        ("pwa_sw_register", "serviceWorker.register('./sw.js')"),
     ]
     for name, fragment in html_checks:
         results.append(check(f"frontend_{name}", frontend_contains(fragment)))
+
+    # PWA 接入点在 index.html（manifest 链接 / SW 注册 / 移动端样式）
+    index_html = frontend_fetch("/src/index.html")
+    for name, fragment in [
+        ("pwa_manifest_link", 'manifest.webmanifest'),
+        ("pwa_theme_color", 'theme-color'),
+        ("live_mode_button_dom", 'live-toggle-btn'),
+        ("mobile_media_query", 'max-width: 720px'),
+    ]:
+        results.append(check(f"frontend_{name}", fragment in index_html))
+
+    # PWA 静态资源可达
+    try:
+        manifest = frontend_fetch("/src/manifest.webmanifest")
+        results.append(check("pwa_manifest_valid", '"start_url"' in manifest and "icon-192.png" in manifest))
+    except Exception as exc:
+        results.append(check("pwa_manifest_valid", False, detail=str(exc)))
+    try:
+        sw = frontend_fetch("/src/sw.js")
+        results.append(check("pwa_sw_served", "closeai-shell" in sw and "addEventListener('fetch'" in sw))
+    except Exception as exc:
+        results.append(check("pwa_sw_served", False, detail=str(exc)))
+    try:
+        icon_status = urllib.request.urlopen(f"{FRONTEND_BASE}/src/icons/icon-192.png").status
+        results.append(check("pwa_icon_192", icon_status == 200))
+    except Exception as exc:
+        results.append(check("pwa_icon_192", False, detail=str(exc)))
 
     print(f"[smoke] summary: {sum(results)}/{len(results)} passed")
     if not all(results):

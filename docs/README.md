@@ -1,7 +1,7 @@
 # 客户攻单AI — 项目状态
 
 > 最后更新：2026-09-29
-> 当前版本：v0.8.0
+> 当前版本：v0.9.0
 
 ## 已实现
 
@@ -22,10 +22,11 @@
 - 种子数据脚本 + 前端冒烟测试 + 重启测试脚本
 - 完整测试覆盖（99 个后端测试：含反馈/建议审核/观测/混合检索专项）
 - **v0.8 知识飞轮**：来源卡反馈（👍/👎 采纳率看板）、知识沉淀建议审核流（会后自动生成 → admin 一键入库）、LLM 调用观测（成功率/降级/token/耗时）、混合检索（FTS5 + embedding 向量 RRF 融合，embedding 不可用自动降级纯 FTS）
+- **v0.9 现场可用**：会中实时辅助模式（语音转写 → 停顿 2.5s 自动生成建议，阶段实时显示，异常优雅降级）、PWA（manifest + Service Worker App Shell 缓存 + 图标，可安装到主屏）、移动端适配（弹窗近全屏、44px 触控目标、防 iOS 聚焦缩放）、离线兜底（简报/会中建议 localStorage 缓存，断网显示离线缓存版本）
 
 ## 待实现
 
-- 会中实时语音转写
+- 后端 ASR 接入（当前用浏览器 Web Speech API，依赖 Chrome/Edge + 网络）
 - CRM 集成
 - 多端同步
 
@@ -44,12 +45,15 @@ backend/
     schemas/           # Pydantic schemas
     db/                # 数据库会话与初始化
     agent/             # Agent 模块
-  tests/               # 测试套件（17 个测试文件）
+  tests/               # 测试套件（22 个测试文件）
   scripts/             # 演示与种子数据脚本
 frontend/
   src/
     index.html         # 单页应用
     app.js             # 前端逻辑
+    manifest.webmanifest # PWA 清单（v0.9）
+    sw.js              # Service Worker：App Shell 离线缓存（v0.9）
+    icons/             # PWA 图标 192/512
     prototype.html     # 原型页面
 docs/                  # 设计文档
 scripts/               # 项目级脚本

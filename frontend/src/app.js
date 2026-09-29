@@ -390,15 +390,26 @@ async function updateCustomerType(customerId) {
 
 async function renderBriefing(customerId) {
   const sessionId = currentSessionId ? `&session_id=${encodeURIComponent(currentSessionId)}` : '';
-  const data = await api(`/api/v1/customers/${customerId}/briefing?${sessionId}`, { method: 'POST' });
-  const payload = data.data || {};
+  const container = document.getElementById('briefing-result');
+  let payload = null;
+  let cached = null;
+  try {
+    if (isOffline()) throw new Error('offline');
+    const data = await api(`/api/v1/customers/${customerId}/briefing?${sessionId}`, { method: 'POST' });
+    payload = data.data || {};
+    cacheSave('briefing', customerId, payload);
+  } catch (e) {
+    cached = cacheLoad('briefing', customerId);
+    if (!cached) throw e;
+    payload = cached.payload;
+  }
   const sourceCards = sourceCardsHtml(payload.llm_source_cards || [], { scene: 'briefing', customerId });
   // 外部情报区块：有数据才渲染，不占空态版面
   const intelHtml = intelBlockHtml(payload.external_intel);
-  const container = document.getElementById('briefing-result');
+  const offlineBadge = cached ? `<span class="badge badge-gray">📴 离线缓存 · ${escapeHtml(cached.at.slice(0, 16).replace('T', ' '))}</span> ` : '';
   container.innerHTML = `
     <div class="result-block">
-      <h3>${escapeHtml(payload.customer_name || customerId)}</h3>
+      <h3>${escapeHtml(payload.customer_name || customerId)} ${offlineBadge}</h3>
       <p><strong>类型：</strong>${escapeHtml(payload.primary_type || '待判断')}${payload.secondary_type ? ' / ' + escapeHtml(payload.secondary_type) : ''} <span class="badge ${payload.confidence ? 'badge-green' : 'badge-gray'}">置信度 ${payload.confidence ?? '-'}</span></p>
       <p><strong>判断依据：</strong>${escapeHtml(payload.evidence || '-')}</p>
       <p><strong>破冰话术：</strong>${escapeHtml(payload.opening_line || '-')} ${payload.opening_line ? `<button class="copy-btn" data-copy="${escapeHtml(payload.opening_line)}">📋 复制</button>` : ''}</p>
@@ -416,19 +427,53 @@ async function renderBriefing(customerId) {
   await loadCustomerDetail();
 }
 
-async function renderAssist(customerId) {
+// ─── 离线兜底：简报/会中建议本地缓存，断网可看 ───
+
+function cacheSave(kind, customerId, payload) {
+  try {
+    localStorage.setItem(`closeai-cache-${kind}-${customerId}`,
+      JSON.stringify({ at: new Date().toISOString(), payload }));
+  } catch (e) { /* 存储满/隐私模式：静默跳过 */ }
+}
+
+function cacheLoad(kind, customerId) {
+  try {
+    const raw = localStorage.getItem(`closeai-cache-${kind}-${customerId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function isOffline() {
+  return navigator.onLine === false;
+}
+
+async function renderAssist(customerId, opts = {}) {
+  const live = !!opts.live;
+  const transcriptEl = document.getElementById('assist-transcript');
   const payload = {
     current_stage: document.getElementById('assist-stage').value,
-    transcript: document.getElementById('assist-transcript').value,
+    // 实时模式只送最近 400 字：转写持续增长，避免提示词无限膨胀
+    transcript: live ? (transcriptEl.value || '').slice(-400) : transcriptEl.value,
     customer_type: document.getElementById('assist-type')?.value || '',
   };
-  const data = await api(`/api/v1/customers/${customerId}/assist`, { method: 'POST', body: JSON.stringify(payload) });
-  const out = data.data || {};
-  const sourceCards = sourceCardsHtml(out.source_cards || [], { scene: 'assist', customerId });
   const container = document.getElementById('assist-result');
+  let out = null;
+  let cached = null;
+  try {
+    if (isOffline()) throw new Error('offline');
+    const data = await api(`/api/v1/customers/${customerId}/assist`, { method: 'POST', body: JSON.stringify(payload) });
+    out = data.data || {};
+    cacheSave('assist', customerId, out);
+  } catch (e) {
+    cached = cacheLoad('assist', customerId);
+    if (!cached) throw e;
+    out = cached.payload;
+  }
+  const sourceCards = sourceCardsHtml(out.source_cards || [], { scene: 'assist', customerId });
+  const offlineBadge = cached ? `<span class="badge badge-gray">📴 离线缓存 · ${escapeHtml(cached.at.slice(0, 16).replace('T', ' '))}</span> ` : '';
   container.innerHTML = `
     <div class="result-block">
-      <h3>会中辅助</h3>
+      <h3>会中辅助 ${offlineBadge}</h3>
       <p><strong>阶段：</strong>${escapeHtml(out.current_stage || '-')} → 检测到 <strong>${escapeHtml(out.detected_stage || '-')}</strong></p>
       <p><strong>阶段提示：</strong>${escapeHtml(out.stage_guidance || '-')}</p>
       <p><strong>建议话术：</strong>${escapeHtml(out.suggested_response || '-')} ${out.suggested_response ? `<button class="copy-btn" data-copy="${escapeHtml(out.suggested_response)}">📋 复制</button>` : ''}</p>
@@ -439,6 +484,12 @@ async function renderAssist(customerId) {
     </div>
   `;
   container.style.display = 'block';
+  if (live) {
+    liveState.count += 1;
+    liveState.stage = out.detected_stage || liveState.stage;
+    updateLiveStatus();
+    container.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 }
 
 function getTagValues(group) {
@@ -576,6 +627,10 @@ function openTypeForm(customerId) {
 }
 function closeModal(id) {
   document.getElementById(id).style.display = 'none';
+  // 关闭会中弹窗时退出实时模式，避免后台持续录音
+  if (id === 'assist-modal' && typeof liveState !== 'undefined' && liveState.active) {
+    stopLiveAssist();
+  }
 }
 function logout() {
   authToken = null;
@@ -1191,9 +1246,13 @@ function renderLLMPanel(llm) {
   `;
 }
 
-// ─── 语音转写 ───
+// ─── 语音转写 + 会中实时辅助模式 ───
 let recognition = null;
 let isRecording = false;
+let onFinalTranscript = null;  // 实时模式挂载的回调：每段最终转写文本
+
+// 实时模式状态：语音持续转写 → 停顿 2.5s 自动生成建议 → 结果就地刷新
+const liveState = { active: false, count: 0, stage: '-', timer: null };
 
 function initVoiceRecognition() {
   if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -1216,7 +1275,7 @@ function initVoiceRecognition() {
       btn.classList.add('voice-recording');
       btn.textContent = '⏹ 停止';
     }
-    if (status) status.textContent = '🔴 正在录音...';
+    if (status) status.textContent = liveState.active ? '🔴 实时监听中（说完停顿即自动出建议）' : '🔴 正在录音...';
   };
 
   rec.onresult = (event) => {
@@ -1225,6 +1284,7 @@ function initVoiceRecognition() {
       const transcript = event.results[i][0].transcript;
       if (event.results[i].isFinal) {
         finalTranscript += transcript;
+        if (liveState.active && onFinalTranscript) onFinalTranscript(transcript);
       } else {
         interim += transcript;
       }
@@ -1237,12 +1297,18 @@ function initVoiceRecognition() {
 
   rec.onerror = (event) => {
     console.error('语音识别错误:', event.error);
-    stopVoiceRecognition();
     if (event.error === 'not-allowed') {
       showToast('请允许麦克风权限', 'error');
-    } else if (event.error !== 'aborted') {
+      if (liveState.active) stopLiveAssist();
+      else stopVoiceRecognition();
+      return;
+    }
+    if (event.error !== 'aborted' && event.error !== 'no-speech') {
+      if (liveState.active) stopLiveAssist();
+      else stopVoiceRecognition();
       showToast(`语音识别错误: ${event.error}`, 'error');
     }
+    // no-speech：保持监听，onend 会自动重启
   };
 
   rec.onend = () => {
@@ -1288,6 +1354,71 @@ function stopVoiceRecognition() {
     btn.textContent = '🎤 语音输入';
   }
   if (status) status.textContent = '';
+}
+
+// ─── 实时辅助模式：语音 → 转写 → 停顿自动生成建议 ───
+
+const LIVE_DEBOUNCE_MS = 2500;
+
+function updateLiveStatus(text) {
+  const el = document.getElementById('live-status');
+  if (!el) return;
+  if (!liveState.active) { el.textContent = ''; return; }
+  el.textContent = text || `🔴 实时辅助中 · 已自动生成 ${liveState.count} 次 · 当前阶段：${liveState.stage}`;
+}
+
+function handleLiveFinalTranscript() {
+  // 每段最终转写后重置防抖：停顿 LIVE_DEBOUNCE_MS 才生成，避免句间频繁请求
+  clearTimeout(liveState.timer);
+  liveState.timer = setTimeout(autoAssistOnce, LIVE_DEBOUNCE_MS);
+}
+
+async function autoAssistOnce() {
+  if (!liveState.active) return;
+  const customerId = document.getElementById('assist-form')?.dataset.customerId;
+  if (!customerId) return;
+  updateLiveStatus('⚡ 正在生成建议...');
+  try {
+    await renderAssist(customerId, { live: true });
+  } catch (e) {
+    if (isOffline()) {
+      updateLiveStatus('📴 当前离线：新建议需联网，历史建议已缓存可看');
+    } else {
+      updateLiveStatus(`生成失败：${e.message}（将继续监听）`);
+    }
+  }
+}
+
+async function toggleLiveAssist() {
+  const btn = document.getElementById('live-toggle-btn');
+  if (liveState.active) { stopLiveAssist(); return; }
+  if (!recognition) {
+    recognition = initVoiceRecognition();
+    if (!recognition) {
+      showToast('您的浏览器不支持语音识别，实时模式需 Chrome/Edge', 'error');
+      return;
+    }
+  }
+  onFinalTranscript = handleLiveFinalTranscript;
+  liveState.active = true;
+  liveState.count = 0;
+  liveState.stage = document.getElementById('assist-stage').value || '听';
+  if (btn) { btn.classList.add('live-active'); btn.textContent = '⏹ 退出实时模式'; }
+  try {
+    recognition.start();
+  } catch (e) { /* 已在运行中则忽略 */ }
+  updateLiveStatus('🔴 实时辅助已开启，请开始说话（说完停顿约 2 秒自动出建议）');
+  showToast('实时辅助模式已开启', 'success');
+}
+
+function stopLiveAssist() {
+  liveState.active = false;
+  clearTimeout(liveState.timer);
+  onFinalTranscript = null;
+  const btn = document.getElementById('live-toggle-btn');
+  if (btn) { btn.classList.remove('live-active'); btn.textContent = '🎙️ 实时模式（自动出建议）'; }
+  stopVoiceRecognition();
+  updateLiveStatus();
 }
 
 // ─── 初始化 ───
@@ -1390,6 +1521,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const customerId = document.getElementById('assist-form').dataset.customerId;
     await renderAssist(customerId);
   });
+  document.getElementById('live-toggle-btn')?.addEventListener('click', toggleLiveAssist);
   document.getElementById('refresh-followup')?.addEventListener('click', async () => {
     const customerId = document.getElementById('followup-form').dataset.customerId;
     await renderFollowup(customerId);
@@ -1451,3 +1583,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('meeting-customer')?.addEventListener('change', onMeetingCustomerChange);
 });
+
+// ─── PWA：Service Worker 注册（App Shell 离线缓存） ───
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW 注册失败:', e));
+  });
+}
