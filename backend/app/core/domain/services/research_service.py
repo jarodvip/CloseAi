@@ -42,6 +42,7 @@ from sqlalchemy import or_, text as _sqltext
 from sqlalchemy.orm import Session
 
 from app.models.research import ResearchChunk
+from app.core.domain.services import embedding_service
 from app.core.domain.services.llm_service import call_llm_with_search  # 模块级绑定：测试可 patch 本模块属性拦截联网调用
 
 _FTS_DDL = """
@@ -95,7 +96,7 @@ def ingest_text(
     customer_id: Optional[int] = None,
     fetched_at=None,
 ) -> List[ResearchChunk]:
-    """分块入库并同步 FTS 索引。所有来源统一走这里"""
+    """分块入库并同步 FTS 索引；embedding 可用时批量向量化（失败不影响入库）"""
     pieces = split_into_chunks(content)
     now = fetched_at or datetime.utcnow()
     made: List[ResearchChunk] = []
@@ -118,6 +119,16 @@ def ingest_text(
             _write_fts(db, chunk)
             db.commit()
         made.append(chunk)
+    try:
+        vectors = embedding_service.embed_texts(
+            [f"{c.title or ''}\n{c.content or ''}" for c in made]
+        )
+        if vectors:
+            for chunk, vec in zip(made, vectors):
+                chunk.embedding = embedding_service.to_blob(vec)
+            db.commit()
+    except Exception:
+        db.rollback()  # 向量化失败：保留已入库分块，检索走 FTS
     return made
 
 
@@ -135,6 +146,58 @@ def delete_chunk(db: Session, chunk_id: int) -> bool:
     return True
 
 
+def _base_chunk_query(db: Session, industry: Optional[str], customer_id: Optional[int]):
+    base = db.query(ResearchChunk)
+    if industry:
+        base = base.filter(ResearchChunk.industry == industry)
+    if customer_id is not None:
+        # 纳入本客户分块与行业级(customer_id 为 NULL)分块；其他客户的私有分块仍被排除
+        base = base.filter(or_(ResearchChunk.customer_id == customer_id,
+                               ResearchChunk.customer_id.is_(None)))
+    return base
+
+
+def _fts_search_ids(db: Session, query: str, industry: Optional[str],
+                    customer_id: Optional[int], k: int) -> Optional[List[int]]:
+    """FTS5 召回，返回按 rank 排序的 chunk id；FTS 不可用返回 None（走 ILIKE 兜底）"""
+    if not _fts_enabled(db):
+        return None
+    # 每个 token 内部的双引号双写转义，避免构造出非法 MATCH 表达式
+    quoted = " ".join('"%s"' % t.replace('"', '""') for t in tokenize_for_fts(query).split())
+    sql = _sqltext(
+        "SELECT rc.id FROM research_chunks_fts f "
+        "JOIN research_chunks rc ON rc.id = f.chunk_id "
+        "WHERE research_chunks_fts MATCH :m "
+        "AND (:i IS NULL OR rc.industry = :i) "
+        "AND (:cu IS NULL OR rc.customer_id = :cu OR rc.customer_id IS NULL) "
+        "ORDER BY rank LIMIT :k"
+    )
+    try:
+        rows = db.execute(sql, {"m": quoted, "i": industry, "cu": customer_id, "k": k}).fetchall()
+    except Exception:
+        # FTS 查询异常（如无法解析的表达式）时回滚并落入 ILIKE 兜底，不让异常穿透
+        db.rollback()
+        return None
+    return [row[0] for row in rows]
+
+
+def _vector_search_ids(db: Session, query: str, industry: Optional[str],
+                       customer_id: Optional[int], k: int) -> List[int]:
+    """向量召回：embedding 不可用（未配置/接口失败）时返回空列表"""
+    qvec = embedding_service.embed_query(query)
+    if not qvec:
+        return []
+    rows = _base_chunk_query(db, industry, customer_id).filter(
+        ResearchChunk.embedding.isnot(None)).limit(5000).all()
+    scored = [
+        (embedding_service.cosine(qvec, embedding_service.from_blob(r.embedding)), r.id)
+        for r in rows
+    ]
+    scored = [item for item in scored if item[0] > 0]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [cid for _, cid in scored[:k]]
+
+
 def search_research(
     db: Session,
     query: str,
@@ -143,43 +206,34 @@ def search_research(
     customer_id: Optional[int] = None,
     k: int = 5,
 ) -> List[ResearchChunk]:
-    """FTS5 全文检索；不可用时退化为 ILIKE。过滤条件按需叠加"""
-    industry = industry or None  # 空串归一为 None，保证 FTS/ILIKE 两条路径过滤语义一致
+    """混合检索：FTS5 关键词召回 + 向量语义召回，RRF 融合排序。
+    embedding 不可用时自动退化为纯 FTS（行为与升级前一致）。"""
+    industry = industry or None  # 空串归一为 None，保证各路径过滤语义一致
     if not query or not query.strip():
         return []
-    base = db.query(ResearchChunk)
-    if industry:
-        base = base.filter(ResearchChunk.industry == industry)
-    if customer_id is not None:
-        # 纳入本客户分块与行业级(customer_id 为 NULL)分块；其他客户的私有分块仍被排除
-        base = base.filter(or_(ResearchChunk.customer_id == customer_id,
-                               ResearchChunk.customer_id.is_(None)))
-    if _fts_enabled(db):
-        # 每个 token 内部的双引号双写转义，避免构造出非法 MATCH 表达式
-        quoted = " ".join('"%s"' % t.replace('"', '""') for t in tokenize_for_fts(query).split())
-        sql = _sqltext(
-            "SELECT rc.* FROM research_chunks_fts f "
-            "JOIN research_chunks rc ON rc.id = f.chunk_id "
-            "WHERE research_chunks_fts MATCH :m "
-            "AND (:i IS NULL OR rc.industry = :i) "
-            "AND (:cu IS NULL OR rc.customer_id = :cu OR rc.customer_id IS NULL) "
-            "ORDER BY rank LIMIT :k"
-        )
-        try:
-            rows = db.execute(sql, {"m": quoted, "i": industry, "cu": customer_id, "k": k}).fetchall()
-        except Exception:
-            # FTS 查询异常（如无法解析的表达式）时回滚并落入下方 ILIKE 兜底，不让异常穿透
-            db.rollback()
-        else:
-            ids = [row[0] for row in rows]
-            if not ids:
-                return []
-            # 用映射按 rank 次序重排，规避 SQL IN 无序保证
-            chunks_by_id = {c.id: c for c in base.filter(ResearchChunk.id.in_(ids)).all()}
-            return [chunks_by_id[i] for i in ids if i in chunks_by_id]
-    # ILIKE 兜底
-    like = f"%{query.strip()}%"
-    return base.filter(ResearchChunk.content.ilike(like)).limit(k).all()
+    fts_ids = _fts_search_ids(db, query, industry, customer_id, k)
+    if fts_ids is None:
+        # ILIKE 兜底：FTS 不可用时直接返回（与旧实现一致，不做向量融合）
+        like = f"%{query.strip()}%"
+        return _base_chunk_query(db, industry, customer_id).filter(
+            ResearchChunk.content.ilike(like)).limit(k).all()
+    vec_ids = _vector_search_ids(db, query, industry, customer_id, k)
+    if not vec_ids:
+        # 无向量召回（embedding 未配置/失败）：保持纯 FTS 结果与次序
+        if not fts_ids:
+            return []
+        chunks_by_id = {c.id: c for c in _base_chunk_query(db, industry, customer_id)
+                        .filter(ResearchChunk.id.in_(fts_ids)).all()}
+        return [chunks_by_id[i] for i in fts_ids if i in chunks_by_id]
+    # RRF 融合：score = Σ 1/(60+rank)，两路命中且排位靠前的胜出
+    scores: Dict[int, float] = {}
+    for rank_list in (fts_ids, vec_ids):
+        for rank, cid in enumerate(rank_list):
+            scores[cid] = scores.get(cid, 0.0) + 1.0 / (60 + rank + 1)
+    fused = sorted(scores, key=lambda cid: scores[cid], reverse=True)[:k]
+    chunks_by_id = {c.id: c for c in _base_chunk_query(db, industry, customer_id)
+                    .filter(ResearchChunk.id.in_(fused)).all()}
+    return [chunks_by_id[i] for i in fused if i in chunks_by_id]
 
 
 def extract_readable_html(html: str) -> Tuple[str, str]:
@@ -292,7 +346,7 @@ def run_backdossier(db: Session, customer) -> List[ResearchChunk]:
     """联网生成客户背调报告并存库（source_type=research）；联网失败降级为空结果，不向调用方抛错"""
     prompt = BACKDOSSIER_PROMPT.format(name=customer.name, industry=customer.industry or "未知")
     try:
-        report = call_llm_with_search(prompt)
+        report = call_llm_with_search(prompt, scene="research")
     except Exception as exc:
         # 联网失败（超时/限流/上游 5xx 等）：宁缺毋滥，返回空列表而非编造
         logger.error("客户背调生成失败 customer_id=%s：%s",

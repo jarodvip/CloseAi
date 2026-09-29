@@ -10,8 +10,10 @@ if str(ROOT) not in sys.path:
 
 from app.db.session import engine, Base
 from app.models.user import User
-from app.models.knowledge import CustomerTypeKnowledge, Case, Script, Evidence
+from app.models.knowledge import CustomerTypeKnowledge, Case, Script, Evidence, KnowledgeSuggestion
 from app.models.research import ResearchChunk  # noqa: F401 显式导入确保 create_all 建表
+from app.models.feedback import Feedback  # noqa: F401 显式导入确保 create_all 建表
+from app.models.llm_log import LLMCallLog  # noqa: F401 显式导入确保 create_all 建表
 from app.core.domain.services.auth_service import create_user
 from app.core.domain.services.research_service import ensure_fts
 

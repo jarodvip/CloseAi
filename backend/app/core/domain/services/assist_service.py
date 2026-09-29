@@ -5,6 +5,7 @@ from app.core.domain.services.customer_service import get_customer
 from app.core.domain.services.knowledge_service import get_customer_type_by_code, list_evidence, list_scripts
 from app.core.domain.services.llm_service import generate_text
 from app.core.domain.services.research_service import cards_from_intel, collect_research_cards
+from app.core.domain.services import embedding_service
 
 
 def build_assist(db: Session, customer_id: int, payload: Dict) -> Dict:
@@ -17,7 +18,7 @@ def build_assist(db: Session, customer_id: int, payload: Dict) -> Dict:
     type_info = get_customer_type_by_code(db, to_code(customer_type))
     detected_stage = _detect_stage(transcript) if transcript else current_stage
     objection, objection_response = _detect_objection(transcript)
-    matched_script = next((item for item in list_scripts(db) if item.type in {customer_type, "通用"}), None)
+    matched_script = _match_script(db, transcript, customer_type)
     evidence = list_evidence(db)[:3]
     evidence_text = format_evidence_text(evidence)
     # 会中辅助 RAG 注入：按客户名/行业两路检索研究块，命中才把资料块前置进提示词；
@@ -47,7 +48,7 @@ def build_assist(db: Session, customer_id: int, payload: Dict) -> Dict:
 【来源说明】引用知识的来源"""
     llm_text = ""
     try:
-        llm_text = generate_text(prompt, system=build_system_prompt("assist", customer_type, type_info, evidence))
+        llm_text = generate_text(prompt, system=build_system_prompt("assist", customer_type, type_info, evidence), scene="assist")
     except Exception:
         llm_text = ""
     source_cards = build_source_cards(type_info, matched_script, evidence)
@@ -68,6 +69,31 @@ def build_assist(db: Session, customer_id: int, payload: Dict) -> Dict:
         "llm_text": llm_text or None,
         "external_intel": hits,
     }
+
+
+def _match_script(db: Session, transcript: str, customer_type: str):
+    """话术匹配：embedding 可用时在"本类型+通用"池内按转写语义挑最相关话术；
+    不可用（未配置/接口失败）时退回原行为——取该池第一条"""
+    scripts = list_scripts(db)
+    pool = [s for s in scripts if s.type in {customer_type, "通用"}] or scripts
+    if not pool:
+        return None
+    fallback = next((s for s in pool if s.type == customer_type), pool[0])
+    if not transcript.strip():
+        return fallback
+    try:
+        qvec = embedding_service.embed_query(transcript)
+        if not qvec:
+            return fallback
+        vectors = embedding_service.embed_texts(
+            [f"{s.scene or ''} {s.type or ''} {s.template or ''}" for s in pool]
+        )
+        if not vectors:
+            return fallback
+        return max(zip(pool, vectors),
+                   key=lambda sv: embedding_service.cosine(qvec, sv[1]))[0]
+    except Exception:
+        return fallback
 
 
 def _detect_stage(transcript: str) -> str:

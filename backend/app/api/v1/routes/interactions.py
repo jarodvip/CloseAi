@@ -56,6 +56,7 @@ def followup_route(customer_id: int, payload: FollowupIn, db: Session = Depends(
         "pending_actions": payload.pending_actions or [],
         "transcript": payload.transcript,
         "customer_type": customer.primary_type or payload.customer_type or "品牌野心型",
+        "username": user.get("username"),
     })
     return {
         "code": 0,

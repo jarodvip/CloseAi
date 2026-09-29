@@ -11,6 +11,7 @@ from app.api.v1.routes.analyze import router as analyze_router
 from app.api.v1.routes.dashboard import router as dashboard_router
 from app.api.v1.routes.research import router as research_router
 from app.api.v1.routes.research import customer_router as research_customer_router
+from app.api.v1.routes.feedback import router as feedback_router
 
 
 main_router = APIRouter()
@@ -21,6 +22,7 @@ main_router.include_router(customers_router, prefix="/api/v1/customers", tags=["
 main_router.include_router(briefing_router, prefix="/api/v1/customers", tags=["briefing"])
 main_router.include_router(interactions_router, prefix="/api/v1/customers", tags=["interactions"])
 main_router.include_router(knowledge_router, prefix="/api/v1/knowledge", tags=["knowledge"])
+main_router.include_router(feedback_router, prefix="/api/v1/feedback", tags=["feedback"])
 main_router.include_router(chat_router, prefix="/api/v1/chat", tags=["chat"])
 main_router.include_router(analyze_router, prefix="/api/v1", tags=["analyze"])
 main_router.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["dashboard"])

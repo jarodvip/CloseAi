@@ -47,3 +47,25 @@ class Evidence(Base):
     value = Column(String(150), nullable=True)
     scene = Column(String(150), nullable=True)
     source_ref = Column(String(255), nullable=True)
+
+
+class KnowledgeSuggestion(Base):
+    """知识沉淀建议草稿：会后跟进自动生成，admin 审核通过后进入知识库"""
+
+    __tablename__ = "knowledge_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, nullable=True, index=True)
+    customer_name = Column(String(150), nullable=True)
+    username = Column(String(50), nullable=True)          # 生成跟进包的销售
+    suggestion_type = Column(String(20), default="script")  # script / case / evidence
+    scene = Column(String(100), nullable=True)            # 话术场景 / 证据场景
+    ktype = Column(String(100), nullable=True)            # 对应 Script.type 客户类型
+    title = Column(String(200), nullable=True)
+    industry = Column(String(100), nullable=True)
+    content = Column(Text, nullable=False)                # 草稿正文（话术模板/案例结果）
+    status = Column(String(20), default="pending", index=True)  # pending / approved / rejected
+    note = Column(String(255), nullable=True)             # 驳回原因或审核备注
+    reviewed_by = Column(String(50), nullable=True)
+    reviewed_at = Column(String(30), nullable=True)
+    created_at = Column(String(30), nullable=True)

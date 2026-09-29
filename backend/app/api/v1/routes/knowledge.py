@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import distinct
-from app.core.domain.services.knowledge_service import list_customer_types, list_cases, list_scripts, list_evidence, create_case, create_script
-from app.schemas.knowledge_admin import CaseIn, ScriptIn
+from app.core.domain.services.knowledge_service import (
+    list_customer_types, list_cases, list_scripts, list_evidence, create_case, create_script,
+    list_suggestions, approve_suggestion, reject_suggestion, suggestion_dict,
+)
+from app.schemas.knowledge_admin import CaseIn, ScriptIn, SuggestionEditIn, SuggestionRejectIn
 from app.core.deps import get_db, get_current_user, require_admin
 from app.models.knowledge import Case, Script
 
@@ -57,3 +60,27 @@ def create_case_route(payload: CaseIn, db: Session = Depends(get_db), user: dict
 @router.post("/scripts")
 def create_script_route(payload: ScriptIn, db: Session = Depends(get_db), user: dict = Depends(require_admin)):
     return {"code": 0, "message": "ok", "data": create_script(db, payload.model_dump()).model_dump()}
+
+
+# ── 知识沉淀建议审核流（admin） ──
+
+@router.get("/suggestions")
+def list_suggestions_route(status: str = "pending", db: Session = Depends(get_db), user: dict = Depends(require_admin)):
+    return {"code": 0, "message": "ok", "data": [suggestion_dict(s) for s in list_suggestions(db, status or None)]}
+
+
+@router.post("/suggestions/{suggestion_id}/approve")
+def approve_suggestion_route(suggestion_id: int, payload: SuggestionEditIn | None = None,
+                             db: Session = Depends(get_db), user: dict = Depends(require_admin)):
+    edits = payload.model_dump(exclude_none=True) if payload else None
+    record, knowledge = approve_suggestion(db, suggestion_id, edits, user["username"])
+    return {"code": 0, "message": "ok",
+            "data": {"suggestion": suggestion_dict(record),
+                     "knowledge_id": getattr(knowledge, "id", None)}}
+
+
+@router.post("/suggestions/{suggestion_id}/reject")
+def reject_suggestion_route(suggestion_id: int, payload: SuggestionRejectIn | None = None,
+                            db: Session = Depends(get_db), user: dict = Depends(require_admin)):
+    record = reject_suggestion(db, suggestion_id, payload.note if payload else None, user["username"])
+    return {"code": 0, "message": "ok", "data": suggestion_dict(record)}

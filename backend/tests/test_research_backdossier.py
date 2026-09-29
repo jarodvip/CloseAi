@@ -37,7 +37,7 @@ def test_run_backdossier_ingests_report(monkeypatch):
     db = SessionLocal()
     made = []
     try:
-        monkeypatch.setattr(research_service, "call_llm_with_search", lambda prompt, system=None: REPORT_FAKE)
+        monkeypatch.setattr(research_service, "call_llm_with_search", lambda prompt, system=None, **kwargs: REPORT_FAKE)
         # 直接构造内存对象即可验证逻辑
         class _Cust:
             id = None

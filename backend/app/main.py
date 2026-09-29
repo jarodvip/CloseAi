@@ -26,7 +26,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-app = FastAPI(title="客户攻单AI", version="0.7.0")
+app = FastAPI(title="客户攻单AI", version="0.8.0")
 app.add_middleware(RequestSizeLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,

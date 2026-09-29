@@ -1,9 +1,10 @@
 from typing import Dict, List, Optional
 from datetime import datetime
+import re
 from sqlalchemy.orm import Session
 from app.core.domain.services.common import build_source_cards, build_system_prompt, collect_source_refs, format_evidence_text, to_code
 from app.core.domain.services.customer_service import get_customer
-from app.core.domain.services.knowledge_service import get_customer_type_by_code, list_evidence, list_scripts
+from app.core.domain.services.knowledge_service import get_customer_type_by_code, list_evidence, list_scripts, create_suggestion, suggestion_dict
 from app.core.domain.services.llm_service import generate_text
 
 
@@ -37,11 +38,13 @@ def build_followup(db: Session, customer_id: int, payload: Dict) -> Dict:
 【来源说明】引用知识的来源"""
     llm_text = ""
     try:
-        llm_text = generate_text(prompt, system=build_system_prompt("followup", customer_type, type_info, evidence))
+        llm_text = generate_text(prompt, system=build_system_prompt("followup", customer_type, type_info, evidence), scene="followup")
     except Exception:
         llm_text = ""
     source_cards = build_source_cards(type_info, matched_script, evidence)
     source_refs = collect_source_refs(type_info, matched_script, evidence)
+    suggestions = _create_suggestion_drafts(db, customer, payload, customer_type,
+                                            username=payload.get("username"), llm_text=llm_text)
     return {
         "summary": summary,
         "decisions": decisions,
@@ -49,7 +52,11 @@ def build_followup(db: Session, customer_id: int, payload: Dict) -> Dict:
         "followup_email": _email(summary, customer_type),
         "followup_wechat": _wechat(summary),
         "tasks": _tasks(pending_actions),
-        "knowledge_update_suggestion": _knowledge_update(payload),
+        "knowledge_update_suggestion": (
+            f"已生成 {len(suggestions)} 条知识沉淀建议，待管理员审核入库。" if suggestions
+            else "本次暂未发现必须沉淀的新模板。"
+        ),
+        "knowledge_suggestions": [suggestion_dict(s) for s in suggestions],
         "source_cards": source_cards,
         "source_refs": source_refs,
         "llm_text": llm_text or None,
@@ -75,8 +82,42 @@ def _tasks(pending_actions):
     return tasks
 
 
-def _knowledge_update(payload):
+def _extract_llm_suggestion(llm_text: str) -> str:
+    """从 LLM 输出中提取【知识沉淀建议】段；无该段或为空则返回空串"""
+    if not llm_text:
+        return ""
+    match = re.search(r"【知识沉淀建议】(.+?)(?=【|$)", llm_text, re.S)
+    if not match:
+        return ""
+    text = match.group(1).strip().strip("：:")
+    # LLM 无 key 时会带回模拟提示头，直接判为无效内容
+    if not text or "规则引擎" in text[:20]:
+        return ""
+    return text[:2000]
+
+
+def _create_suggestion_drafts(db: Session, customer, payload: Dict, customer_type: str,
+                              username: Optional[str], llm_text: str) -> list:
+    """拜访中出现异议/预算信号时，自动生成一条话术沉淀草稿（待 admin 审核）"""
     transcript = payload.get("transcript") or ""
-    if "异议" in transcript or "预算" in transcript:
-        return "建议新增一条该客户类型的常见异议应答。"
-    return "本次暂未发现必须沉淀的新模板。"
+    if "异议" not in transcript and "预算" not in transcript:
+        return []
+    llm_suggestion = _extract_llm_suggestion(llm_text)
+    content = llm_suggestion or (
+        f"客户原话：{transcript[:120]}\n"
+        f"建议应答：先拆单次触达成本，再给同量级案例，落到低门槛测试方案。"
+    )
+    try:
+        return [create_suggestion(db, {
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "username": username,
+            "suggestion_type": "script",
+            "scene": "异议应答",
+            "ktype": customer_type,
+            "title": f"{customer.name} 异议应答沉淀",
+            "content": content,
+        })]
+    except Exception:
+        # 草稿落库失败不影响跟进包主流程
+        return []

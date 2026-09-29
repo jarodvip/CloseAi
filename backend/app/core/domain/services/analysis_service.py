@@ -203,7 +203,7 @@ def _infer_type(db: Session, customer, payload: dict) -> Any:
 请只输出最匹配的类型名称，例如：品牌野心型"""
 
     try:
-        result = generate_text(prompt)
+        result = generate_text(prompt, scene="analyze")
         predicted = result.strip().split("\n")[0].strip()
         matched_type = next((t for t in types if predicted in t.name or t.name in predicted), None)
         if matched_type:

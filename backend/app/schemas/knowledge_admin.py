@@ -17,3 +17,18 @@ class ScriptIn(BaseModel):
     type: str = Field(max_length=100)
     template: str
     source: Optional[str] = Field(default=None, max_length=255)
+
+
+class SuggestionEditIn(BaseModel):
+    """审核通过时可选的编辑字段（不传则用草稿原值）"""
+    suggestion_type: Optional[str] = Field(default=None, max_length=20)
+    scene: Optional[str] = Field(default=None, max_length=100)
+    ktype: Optional[str] = Field(default=None, max_length=100)
+    title: Optional[str] = Field(default=None, max_length=200)
+    industry: Optional[str] = Field(default=None, max_length=100)
+    content: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=255)
+
+
+class SuggestionRejectIn(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=255)

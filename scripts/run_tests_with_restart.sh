@@ -3,10 +3,10 @@ set -euo pipefail
 
 FRONTEND_PORT="${FRONTEND_PORT:-8080}"
 BACKEND_PORT="${BACKEND_PORT:-8002}"
-BACKEND_DIR="/Users/jarod/Dev/sales/backend"
-FRONTEND_DIR="/Users/jarod/Dev/sales/frontend"
-VENV="/Users/jarod/Dev/sales/backend/.venv"
-PYTHONPATH="/Users/jarod/Dev/sales/backend"
+BACKEND_DIR="/Users/jarod/Dev/CloseAI/backend"
+FRONTEND_DIR="/Users/jarod/Dev/CloseAI/frontend"
+VENV="/Users/jarod/Dev/CloseAI/backend/.venv"
+PYTHONPATH="/Users/jarod/Dev/CloseAI/backend"
 APP_MODULE="${APP_MODULE:-app.main:app}"
 
 kill_port() {

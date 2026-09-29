@@ -1,12 +1,43 @@
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func, distinct
+from sqlalchemy import func
 from app.core.deps import get_db, get_current_user
 from app.models.customer import Customer
 from app.models.briefing import BriefingHistory
 from app.models.interaction import Interaction
+from app.models.feedback import Feedback
+from app.models.llm_log import LLMCallLog
+from app.core.domain.services.feedback_service import feedback_stats
 
 router = APIRouter()
+
+
+def _llm_stats(db: Session) -> dict:
+    """近7天 LLM 调用观测：成功率、降级、token、耗时、场景分布"""
+    since = datetime.utcnow() - timedelta(days=7)
+    rows = db.query(LLMCallLog).filter(LLMCallLog.created_at >= since).all()
+    total = len(rows)
+    success = sum(1 for r in rows if r.success)
+    degraded = sum(1 for r in rows if r.degraded)
+    tokens = sum((r.prompt_tokens or 0) + (r.completion_tokens or 0) for r in rows)
+    latencies = [r.latency_ms for r in rows if r.latency_ms]
+    by_scene: dict = {}
+    for r in rows:
+        item = by_scene.setdefault(r.scene, {"scene": r.scene, "total": 0, "degraded": 0})
+        item["total"] += 1
+        item["degraded"] += 1 if r.degraded else 0
+    return {
+        "total": total,
+        "success": success,
+        "degraded": degraded,
+        "success_rate": round(success / total, 4) if total else None,
+        "degrade_rate": round(degraded / total, 4) if total else None,
+        "total_tokens": tokens,
+        "avg_latency_ms": int(sum(latencies) / len(latencies)) if latencies else None,
+        "by_scene": sorted(by_scene.values(), key=lambda x: -x["total"]),
+    }
 
 
 @router.get("/stats")
@@ -34,7 +65,6 @@ def get_dashboard_stats(db: Session = Depends(get_db), user: dict = Depends(get_
     ).scalar() or 0
 
     # 最近7天简报生成趋势（按天）
-    from datetime import datetime, timedelta
     from sqlalchemy import text
     seven_days_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
     result = db.execute(text("""
@@ -52,6 +82,10 @@ def get_dashboard_stats(db: Session = Depends(get_db), user: dict = Depends(get_
     ).group_by(Customer.stage).all()
     stage_dist = [{"stage": s[0] or "未设置", "count": s[1]} for s in stage_distribution if s[0]]
 
+    # 知识飞轮：来源卡反馈采纳率 + LLM 调用观测（近7天）
+    feedback = feedback_stats(db)
+    llm = _llm_stats(db)
+
     return {
         "code": 0,
         "message": "ok",
@@ -63,5 +97,7 @@ def get_dashboard_stats(db: Session = Depends(get_db), user: dict = Depends(get_
             "followups_with_summary": followups_with_summary,
             "briefing_trend": briefing_trend,
             "stage_distribution": stage_dist,
+            "feedback": feedback,
+            "llm": llm,
         },
     }

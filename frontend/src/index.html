@@ -98,6 +98,15 @@
     }
     .voice-recording { animation: pulse 1s infinite; background: #dc2626 !important; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    /* 来源卡反馈按钮 */
+    .fb-btns { margin-left: auto; display: inline-flex; gap: 4px; }
+    .fb-btn { font-size: 12px; padding: 2px 6px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; line-height: 1.2; }
+    .fb-btn:hover { border-color: #4f46e5; background: #eef2ff; }
+    .fb-btn.fb-active { border-color: #16a34a; background: #dcfce7; }
+    /* 知识沉淀建议卡片 */
+    .suggestion-block { background: #fefce8; border: 1px solid #fde68a; border-radius: 10px; padding: 10px; margin-top: 8px; }
+    .suggestion-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .suggestion-content { color: #374151; margin-top: 4px; font-size: 13px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -243,6 +252,17 @@
                     </thead>
                     <tbody id="type-table-body"></tbody>
                   </table>
+                </div>
+              </div>
+
+              <div class="split">
+                <div class="card">
+                  <h3 style="margin:0 0 12px;font-size:16px;">🧲 建议采纳率（知识飞轮）</h3>
+                  <div id="feedback-panel"><p class="muted">加载中...</p></div>
+                </div>
+                <div class="card">
+                  <h3 style="margin:0 0 12px;font-size:16px;">🧠 LLM 调用观测（近7天）</h3>
+                  <div id="llm-panel"><p class="muted">加载中...</p></div>
                 </div>
               </div>
             </div>
@@ -447,6 +467,18 @@
                 <tbody id="knowledge-script-table-body"></tbody>
               </table>
             </div>
+          </div>
+          <div class="card">
+            <h2 style="margin:0 0 10px;font-size:18px;">📮 知识沉淀建议（会后自动生成，审核后入库）</h2>
+            <div style="overflow-x:auto;">
+              <table>
+                <thead>
+                  <tr><th>ID</th><th>客户</th><th>类型</th><th>建议内容</th><th>提交人</th><th>操作</th></tr>
+                </thead>
+                <tbody id="knowledge-suggestion-table-body"></tbody>
+              </table>
+            </div>
+            <div id="knowledge-suggestion-empty" class="empty-state" style="display:block;">📭 暂无待审核建议</div>
           </div>
         </div>
       </div>

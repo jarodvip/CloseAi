@@ -104,15 +104,29 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/\n/g, '<br/>');
 }
 
-function sourceCardsHtml(cards = []) {
+// 与 escapeHtml 相同但不吞换行，供 textarea 等需要保留原文的场景使用
+function escapeText(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ctx = {scene, customerId} 时渲染 👍/👎 反馈按钮，点击后落库驱动采纳率看板
+function sourceCardsHtml(cards = [], ctx = null) {
   if (!Array.isArray(cards) || !cards.length) return '';
   const items = cards.map(card => {
     const badge = card.scene ? `<span class="source-badge">${escapeHtml(card.scene)}</span>` : '';
     const detail = [card.detail, card.label].filter(Boolean).join(' · ');
+    const fb = ctx ? `
+      <span class="fb-btns" data-ctx-scene="${escapeText(ctx.scene || '')}" data-ctx-customer="${ctx.customerId ?? ''}">
+        <button class="fb-btn" type="button" data-rating="up" data-source="${escapeText(card.source || '')}" data-label="${escapeText(card.label || '')}" title="这条建议有用">👍</button>
+        <button class="fb-btn" type="button" data-rating="down" data-source="${escapeText(card.source || '')}" data-label="${escapeText(card.label || '')}" title="这条建议没用">👎</button>
+      </span>` : '';
     return `<li>
       <div class="source-row">
         <span class="source-source">${escapeHtml(card.source || '未知来源')}</span>
         ${badge}
+        ${fb}
       </div>
       <div class="source-detail">${escapeHtml(card.label || '来源')}${detail ? ' · ' + escapeHtml(detail) : ''}</div>
     </li>`;
@@ -378,7 +392,7 @@ async function renderBriefing(customerId) {
   const sessionId = currentSessionId ? `&session_id=${encodeURIComponent(currentSessionId)}` : '';
   const data = await api(`/api/v1/customers/${customerId}/briefing?${sessionId}`, { method: 'POST' });
   const payload = data.data || {};
-  const sourceCards = sourceCardsHtml(payload.llm_source_cards || []);
+  const sourceCards = sourceCardsHtml(payload.llm_source_cards || [], { scene: 'briefing', customerId });
   // 外部情报区块：有数据才渲染，不占空态版面
   const intelHtml = intelBlockHtml(payload.external_intel);
   const container = document.getElementById('briefing-result');
@@ -410,7 +424,7 @@ async function renderAssist(customerId) {
   };
   const data = await api(`/api/v1/customers/${customerId}/assist`, { method: 'POST', body: JSON.stringify(payload) });
   const out = data.data || {};
-  const sourceCards = sourceCardsHtml(out.source_cards || []);
+  const sourceCards = sourceCardsHtml(out.source_cards || [], { scene: 'assist', customerId });
   const container = document.getElementById('assist-result');
   container.innerHTML = `
     <div class="result-block">
@@ -441,7 +455,8 @@ async function renderFollowup(customerId) {
   };
   const data = await api(`/api/v1/customers/${customerId}/followup`, { method: 'POST', body: JSON.stringify(payload) });
   const out = data.data || {};
-  const sourceCards = sourceCardsHtml(out.source_cards || []);
+  const sourceCards = sourceCardsHtml(out.source_cards || [], { scene: 'followup', customerId });
+  const suggestionsHtml = renderKnowledgeSuggestions(out.knowledge_suggestions || []);
   const container = document.getElementById('followup-result');
   container.innerHTML = `
     <div class="result-block">
@@ -452,6 +467,7 @@ async function renderFollowup(customerId) {
       <p><strong>邮件草稿：</strong>${escapeHtml(out.followup_email || '-')}</p>
       <p><strong>微信跟进：</strong>${escapeHtml(out.followup_wechat || '-')}</p>
       <p><strong>知识沉淀建议：</strong>${escapeHtml(out.knowledge_update_suggestion || '-')}</p>
+      ${suggestionsHtml}
       ${sourceCards}
     </div>
   `;
@@ -464,8 +480,11 @@ function renderMeetingResult(payload) {
   const container = document.getElementById('meeting-result');
   if (!container) return;
   const type = payload.primary_type || payload.current_stage || '待判断';
+  const meetingCustomerId = Number(document.getElementById('meeting-customer')?.value || 0) || null;
+  const meetingScene = payload.suggested_response !== undefined ? 'assist' : 'briefing';
   const sourceCards = payload.llm_source_cards
-    ? sourceCardsHtml(Array.isArray(payload.llm_source_cards) ? payload.llm_source_cards : JSON.parse(payload.llm_source_cards || '[]'))
+    ? sourceCardsHtml(Array.isArray(payload.llm_source_cards) ? payload.llm_source_cards : JSON.parse(payload.llm_source_cards || '[]'),
+                      { scene: meetingScene, customerId: meetingCustomerId })
     : '';
   // 外部情报区块：简报响应才有该键，会中/会后 payload 无此键时自然不渲染
   const intelHtml = intelBlockHtml(payload.external_intel);
@@ -496,6 +515,33 @@ document.addEventListener('click', (e) => {
     copyText(e.target.dataset.copy);
     e.target.textContent = '已复制';
     setTimeout(() => { e.target.textContent = '📋 复制'; }, 1500);
+  }
+});
+
+// 来源卡反馈事件委托：👍/👎 → POST /api/v1/feedback
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.fb-btn');
+  if (!btn) return;
+  const wrap = btn.closest('.fb-btns');
+  const scene = wrap?.dataset.ctxScene || '';
+  const customerRaw = wrap?.dataset.ctxCustomer || '';
+  const payload = {
+    scene,
+    rating: btn.dataset.rating,
+    source: btn.dataset.source || '',
+    label: btn.dataset.label || '',
+    customer_id: customerRaw ? Number(customerRaw) || null : null,
+  };
+  if (!payload.source) return showToast('该来源缺少标识，无法反馈', 'error');
+  btn.parentElement.querySelectorAll('.fb-btn').forEach(b => b.disabled = true);
+  try {
+    await api('/api/v1/feedback', { method: 'POST', body: JSON.stringify(payload) });
+    btn.classList.add('fb-active');
+    showToast(payload.rating === 'up' ? '已记录：有用' : '已记录：没用', 'success');
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    btn.parentElement.querySelectorAll('.fb-btn').forEach(b => b.disabled = false);
   }
 });
 
@@ -704,7 +750,7 @@ async function loadChatMessages(sessionId) {
         try {
           const meta = JSON.parse(item.meta || '{}');
           const cards = Array.isArray(meta.source_cards) ? meta.source_cards : [];
-          if (cards.length) extraHtml = sourceCardsHtml(cards);
+          if (cards.length) extraHtml = sourceCardsHtml(cards, { scene: 'chat', customerId: currentCustomerId });
         } catch (e) { console.error(e); }
       }
       appendChatBubble(item.role, item.content, extraHtml);
@@ -731,7 +777,7 @@ async function sendChatMessage() {
   try {
     const data = await api(`/api/v1/chat/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify({role:'user', content:text}) });
     const reply = data.message || {};
-    const cards = sourceCardsHtml(data.source_cards || []);
+    const cards = sourceCardsHtml(data.source_cards || [], { scene: 'chat', customerId: currentCustomerId });
     appendChatBubble('assistant', reply.content || '未收到回复', cards);
     await loadChatSessions();
   } catch (e) {
@@ -802,6 +848,67 @@ async function createKnowledgeScript() {
   } catch (e) {
     showToast(e.message);
   }
+}
+
+// ─── 知识沉淀建议（跟进包展示 + 后台审核） ───
+
+// 跟进包结果里的建议卡片（只读展示，正式入库走知识库后台审核）
+function renderKnowledgeSuggestions(suggestions = []) {
+  if (!Array.isArray(suggestions) || !suggestions.length) return '';
+  const items = suggestions.map(s => `
+    <li>
+      <div class="suggestion-head">
+        <span class="badge badge-gray">${escapeHtml(s.status === 'pending' ? '待审核' : s.status)}</span>
+        <strong>${escapeHtml(s.title || '未命名建议')}</strong>
+        <span class="muted" style="font-size:12px;">${escapeHtml(s.ktype || '')}${s.scene ? ' · ' + escapeHtml(s.scene) : ''}</span>
+      </div>
+      <div class="suggestion-content">${escapeHtml(s.content || '')}</div>
+    </li>`).join('');
+  return `<div class="suggestion-block"><div class="source-card-title">待审核知识建议（管理员在知识库后台入库）</div><ul class="source-list">${items}</ul></div>`;
+}
+
+async function loadKnowledgeSuggestions() {
+  try {
+    const data = await api('/api/v1/knowledge/suggestions?status=pending');
+    const tbody = document.getElementById('knowledge-suggestion-table-body');
+    if (!tbody) return;
+    const items = data.data || [];
+    const empty = document.getElementById('knowledge-suggestion-empty');
+    if (empty) empty.style.display = items.length ? 'none' : 'block';
+    tbody.innerHTML = items.map(item => `
+      <tr data-suggestion-id="${item.id}">
+        <td>${item.id}</td>
+        <td>${escapeHtml(item.customer_name || '-')}</td>
+        <td>${escapeHtml(item.ktype || '-')}</td>
+        <td><div style="max-width:320px; white-space:pre-wrap;">${escapeHtml(item.content || '')}</div></td>
+        <td>${escapeHtml(item.username || '-')}</td>
+        <td>
+          <span class="button-stack">
+            <button class="sm" onclick="approveKnowledgeSuggestion(${item.id})">通过入库</button>
+            <button class="sm secondary" onclick="rejectKnowledgeSuggestion(${item.id})">驳回</button>
+          </span>
+        </td>
+      </tr>`).join('');
+  } catch (e) { console.error('loadKnowledgeSuggestions:', e); }
+}
+
+async function approveKnowledgeSuggestion(id) {
+  try {
+    await api(`/api/v1/knowledge/suggestions/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
+    showToast('已审核入库', 'success');
+    await loadKnowledgeSuggestions();
+    await loadKnowledgeCases();
+    await loadKnowledgeScripts();
+  } catch (e) { showToast(e.message); }
+}
+
+async function rejectKnowledgeSuggestion(id) {
+  const note = prompt('驳回原因（可选）') || '';
+  try {
+    await api(`/api/v1/knowledge/suggestions/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) });
+    showToast('已驳回', 'success');
+    await loadKnowledgeSuggestions();
+  } catch (e) { showToast(e.message); }
 }
 
 // ─── Dashboard ───
@@ -952,6 +1059,10 @@ async function loadDashboard() {
     // 渲染详细表格
     renderTypeTable(stats.type_distribution || []);
 
+    // 知识飞轮面板：建议采纳率 + LLM 调用观测
+    renderFeedbackPanel(stats.feedback || {});
+    renderLLMPanel(stats.llm || {});
+
     // 显示内容，隐藏加载状态
     document.getElementById('dashboard-loading').style.display = 'none';
     document.getElementById('dashboard-content').style.display = 'block';
@@ -1029,6 +1140,55 @@ function renderTypeTable(distribution) {
       <td>${pct}%</td>
     </tr>`;
   }).join('');
+}
+
+// 建议采纳率面板：总采纳率 + 分场景明细
+function renderFeedbackPanel(feedback) {
+  const container = document.getElementById('feedback-panel');
+  if (!container) return;
+  if (!feedback.total) {
+    container.innerHTML = '<p class="muted">暂无反馈数据。在简报/会中/会后的来源卡点击 👍/👎 即可产生。</p>';
+    return;
+  }
+  const rate = feedback.adoption_rate != null ? `${Math.round(feedback.adoption_rate * 100)}%` : '-';
+  const rows = (feedback.by_scene || []).map(item => {
+    const r = item.adoption_rate != null ? `${Math.round(item.adoption_rate * 100)}%` : '-';
+    return `<tr><td>${escapeHtml(item.scene)}</td><td>${item.up}</td><td>${item.down}</td><td>${r}</td></tr>`;
+  }).join('');
+  container.innerHTML = `
+    <div style="display:flex; gap:16px; margin-bottom:8px;">
+      <div><div class="value" style="font-size:22px; font-weight:700; color:#16a34a;">${rate}</div><div class="muted" style="font-size:12px;">总采纳率</div></div>
+      <div><div style="font-size:22px; font-weight:700;">${feedback.total}</div><div class="muted" style="font-size:12px;">反馈总数（👍${feedback.up} / 👎${feedback.down}）</div></div>
+    </div>
+    <table><thead><tr><th>场景</th><th>👍</th><th>👎</th><th>采纳率</th></tr></thead><tbody>${rows}</tbody></table>
+  `;
+}
+
+// LLM 调用观测面板：近7天成功率/降级/token/耗时 + 分场景
+function renderLLMPanel(llm) {
+  const container = document.getElementById('llm-panel');
+  if (!container) return;
+  if (!llm.total) {
+    container.innerHTML = '<p class="muted">近7天暂无 LLM 调用。未配置 LLM_API_KEY 时业务自动走规则引擎。</p>';
+    return;
+  }
+  const successRate = llm.success_rate != null ? `${Math.round(llm.success_rate * 100)}%` : '-';
+  const degradeRate = llm.degrade_rate != null ? `${Math.round(llm.degrade_rate * 100)}%` : '-';
+  const warn = llm.degrade_rate != null && llm.degrade_rate >= 0.2
+    ? '<p style="color:#dc2626; font-size:13px;">⚠️ 降级率偏高，请检查 LLM_API_KEY 配置与接口可用性。</p>' : '';
+  const rows = (llm.by_scene || []).map(item =>
+    `<tr><td>${escapeHtml(item.scene)}</td><td>${item.total}</td><td>${item.degraded}</td></tr>`).join('');
+  container.innerHTML = `
+    <div style="display:flex; gap:16px; margin-bottom:8px; flex-wrap:wrap;">
+      <div><div style="font-size:22px; font-weight:700; color:#2563eb;">${llm.total}</div><div class="muted" style="font-size:12px;">调用次数</div></div>
+      <div><div style="font-size:22px; font-weight:700;">${successRate}</div><div class="muted" style="font-size:12px;">成功率</div></div>
+      <div><div style="font-size:22px; font-weight:700; color:${llm.degraded ? '#d97706' : '#374151'};">${degradeRate}</div><div class="muted" style="font-size:12px;">降级率</div></div>
+      <div><div style="font-size:22px; font-weight:700;">${llm.total_tokens ?? 0}</div><div class="muted" style="font-size:12px;">tokens</div></div>
+      <div><div style="font-size:22px; font-weight:700;">${llm.avg_latency_ms ?? '-'}ms</div><div class="muted" style="font-size:12px;">平均耗时</div></div>
+    </div>
+    ${warn}
+    <table><thead><tr><th>场景</th><th>调用</th><th>降级</th></tr></thead><tbody>${rows}</tbody></table>
+  `;
 }
 
 // ─── 语音转写 ───
@@ -1148,6 +1308,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await populateCustomerSelects();
       loadKnowledgeCases();
       loadKnowledgeScripts();
+      loadKnowledgeSuggestions();
       refreshDashboard();
       await loadChatSessions();
       const detail = document.getElementById('customer-detail');
@@ -1174,6 +1335,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await populateCustomerSelects();
       loadKnowledgeCases();
       loadKnowledgeScripts();
+      loadKnowledgeSuggestions();
       refreshDashboard();
       await loadChatSessions();
       showToast('登录成功，欢迎回来！', 'success');

@@ -41,7 +41,7 @@ def build_briefing(db: Session, customer_id: int, session_id: Optional[int] = No
 【来源说明】引用知识的来源"""
     llm_text = ""
     try:
-        llm_text = generate_text(prompt, system=build_system_prompt("briefing", primary_type or "待判断", type_info, evidence, customer=customer))
+        llm_text = generate_text(prompt, system=build_system_prompt("briefing", primary_type or "待判断", type_info, evidence, customer=customer), scene="briefing")
     except Exception:
         llm_text = ""
     source_cards = build_source_cards_for_cases(type_info, cases, evidence)

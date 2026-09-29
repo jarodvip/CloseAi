@@ -78,7 +78,7 @@ def build_reply(db: Session, session_id: int, content: str) -> dict:
         prompt_for_llm = f"{content}\n\n以下是内部资料，回答时可引用并在结尾标注来源：\n{block}"
     llm_text = ""
     try:
-        llm_text = generate_text(prompt_for_llm, system=build_system_prompt("chat", customer.primary_type if customer else "待判断", context.get("type_info"), context.get("evidence", []), customer=customer))
+        llm_text = generate_text(prompt_for_llm, system=build_system_prompt("chat", customer.primary_type if customer else "待判断", context.get("type_info"), context.get("evidence", []), customer=customer), scene="chat")
     except Exception:
         llm_text = ""
     reply_text = llm_text or _rule_reply(customer, content)
